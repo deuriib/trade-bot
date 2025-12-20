@@ -157,8 +157,8 @@ class StrategyEngine:
   * close_long: 平多仓
   * close_short: 平空仓
   * close_position: 平仓（通用）
-  * hold: 观望
-  * wait: 等待
+  * wait: 观望（无持仓时）
+  * hold: 持有（有持仓时维持当前仓位）
 - **confidence**: 信心度 0-100
 
 ### 开仓时必填
@@ -281,7 +281,7 @@ class StrategyEngine:
 }
 </decision>
 
-### 示例 2: 观望
+### 示例 2: 观望（无持仓）
 
 <reasoning>
 多周期分析：
@@ -292,13 +292,13 @@ class StrategyEngine:
 综合判断：
 - 多周期信号微弱，缺乏强烈方向性
 - RSI均在中性区间，无超买超卖
-- 建议观望，等待更明确的入场信号
+- 当前无持仓，建议观望，等待更明确的入场信号
 </reasoning>
 
 <decision>
 {
   "symbol": "BTCUSDT",
-  "action": "hold",
+  "action": "wait",
   "confidence": 45,
   "leverage": 1,
   "position_size_usd": 0,
@@ -399,7 +399,7 @@ class StrategyEngine:
         返回保守的hold决策
         """
         return {
-            'action': 'hold',
+            'action': 'wait',
             'symbol': context.get('symbol', 'BTCUSDT'),
             'confidence': 0,
             'leverage': 1,

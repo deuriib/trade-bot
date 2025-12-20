@@ -235,10 +235,10 @@ class LLMOutputParser:
             'exit': 'close_position',
             'close_position': 'close_position',
             
-            # 观望
-            'wait': 'hold',
-            'hold': 'hold',
-            'skip': 'hold',
+            # 观望/持有
+            'wait': 'wait',  # 无持仓时观望
+            'hold': 'hold',  # 有持仓时持有
+            'skip': 'wait',  # skip 映射到 wait
         }
         
         normalized = action_map.get(action.lower(), action)
