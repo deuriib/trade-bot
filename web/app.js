@@ -162,8 +162,9 @@ function renderDecisionTable(history) {
         // Reason (truncated with tooltip)
         let reasonHtml = '<span class="cell-na">-</span>';
         if (d.reason) {
-            const shortReason = d.reason.length > 30 ? d.reason.substring(0, 30) + '...' : d.reason;
-            reasonHtml = `<span title="${d.reason}" style="font-size:0.8em;cursor:help">${shortReason}</span>`;
+            const fullReason = d.reason.replace(/"/g, '&quot;'); // Escape quotes for HTML attribute
+            const shortReason = d.reason.length > 40 ? d.reason.substring(0, 40) + '...' : d.reason;
+            reasonHtml = `<span title="${fullReason}" style="font-size:0.8em;cursor:help;display:block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shortReason}</span>`;
         }
 
         // Position % (exact percentage)

@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM-TradeBot Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=13">
+    <link rel="stylesheet" href="/static/style.css?v=15">
     <link
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap"
         rel="stylesheet">
@@ -112,22 +112,22 @@
                         <table id="decision-table">
                             <thead>
                                 <tr>
-                                    <th>Time</th>
-                                    <th>Symbol</th>
-                                    <th>Result</th>
-                                    <th>Conf</th>
-                                    <th>Reason</th>
-                                    <th>Strat</th>
-                                    <th>1h-T</th>
-                                    <th>1h-O</th>
-                                    <th>15m</th>
-                                    <th>5m</th>
-                                    <th>Sent</th>
-                                    <th>Risk</th>
-                                    <th>Guard</th>
-                                    <th>Pos%</th>
-                                    <th>Aligned</th>
-                                    <th>Context</th>
+                                    <th title="决策生成时间">Time</th>
+                                    <th title="交易对">Symbol</th>
+                                    <th title="最终决策动作 (LONG/SHORT/HOLD/WAIT)">Result</th>
+                                    <th title="信心度 (0-100%)">Conf</th>
+                                    <th title="决策原因详细说明 (悬停查看完整)">Reason</th>
+                                    <th title="Strategist 综合评分 (-100~+100)">Strat</th>
+                                    <th title="1小时趋势信号 (TrendSubAgent)">1h-T</th>
+                                    <th title="1小时震荡信号 (OscillatorSubAgent)">1h-O</th>
+                                    <th title="15分钟周期信号 (趋势T + 震荡O)">15m</th>
+                                    <th title="5分钟周期信号 (趋势T + 震荡O)">5m</th>
+                                    <th title="情绪信号 (资金流向 + 资金费率)">Sent</th>
+                                    <th title="风险等级 (SAFE/WARNING/DANGER)">Risk</th>
+                                    <th title="Guardian 审核结果 (✅通过 / ⛔拦截)">Guard</th>
+                                    <th title="价格精确百分位 (0-100%, 当前价在历史区间的位置)">Pos%</th>
+                                    <th title="多周期对齐状态 (✅一致 / ➖分歧)">Aligned</th>
+                                    <th title="市场环境 (状态: UP/DOWN/CHOP + 位置: HIGH/MID/LOW)">Context</th>
                                 </tr>
                             </thead>
                             <tbody>
