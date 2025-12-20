@@ -84,6 +84,12 @@ LLM-TradeBot/
 4. **🛡️ RiskAuditAgent**: 执行严格的风险审查（仓位、止损、杠杆、市场流动性）。
 5. **🚀 ExecutionEngine**: 负责交易信号的最终执行及全生命周期追踪。
 
+### 数据流转架构图
+
+![数据流转架构](./docs/data_flow_diagram_1766231460411.png)
+
+> 📖 **详细文档**: 查看 [数据流转分析文档](./docs/data_flow_analysis.md) 了解完整的数据流转机制和技术细节。
+
 ---
 
 ## 📄 数据全链路审计
