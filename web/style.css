@@ -185,6 +185,35 @@ body {
     color: var(--neon-red);
 }
 
+.btn-control.restart:hover {
+    background: rgba(116, 185, 255, 0.2);
+    color: #74b9ff;
+}
+
+.interval-selector {
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-left: 8px;
+}
+
+.interval-selector:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(116, 185, 255, 0.3);
+}
+
+.interval-selector:focus {
+    outline: none;
+    border-color: #74b9ff;
+    background: rgba(116, 185, 255, 0.1);
+}
+
 /* Main Layout - Flex Column of Rows */
 .dashboard-grid {
     display: flex;
@@ -207,7 +236,8 @@ body {
 /* Row 1: Charts (K-Line | Net Value) */
 .row-charts {
     display: grid;
-    grid-template-columns: 1.2fr 1fr;
+    grid-template-columns: 1.4fr 1fr;
+    /* Increased K-Line width from 1.2fr to 1.4fr */
     gap: 20px;
     flex: 1.4;
     min-height: 380px;
@@ -362,7 +392,8 @@ tr:hover {
 /* Row 2: Decisions (Wide) | History (Narrow) */
 .row-tables {
     display: grid;
-    grid-template-columns: 1.2fr 1fr;
+    grid-template-columns: 1.4fr 1fr;
+    /* Increased from 1.2fr to 1.4fr */
     gap: 20px;
     flex: 2.5;
     min-height: 400px;

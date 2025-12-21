@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM-TradeBot Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=21">
+    <link rel="stylesheet" href="/static/style.css?v=27">
     <link
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap"
         rel="stylesheet">
@@ -28,10 +28,20 @@
                     <button id="btn-start" class="btn-control start" title="Start Trading">▶</button>
                     <button id="btn-pause" class="btn-control pause" title="Pause Trading">⏸</button>
                     <button id="btn-stop" class="btn-control stop" title="Stop System">⏹</button>
+                    <button id="btn-restart" class="btn-control restart" title="Restart System">🔄</button>
+                    <select id="interval-selector" class="interval-selector" title="Cycle Interval">
+                        <option value="1">1 min</option>
+                        <option value="3" selected>3 min</option>
+                        <option value="5">5 min</option>
+                    </select>
                 </div>
                 <div class="status-item">
                     <span class="label">MODE</span>
                     <span id="sys-mode" class="value badge">LOADING</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">CYCLE</span>
+                    <span id="cycle-counter" class="value">#0</span>
                 </div>
                 <div class="status-item">
                     <span class="label">EQUITY</span>
@@ -135,6 +145,7 @@
                             <thead>
                                 <tr>
                                     <th title="决策生成时间">Time</th>
+                                    <th title="循环次数">Cycle</th>
                                     <th title="交易对">Symbol</th>
                                     <th title="最终决策动作 (LONG/SHORT/HOLD/WAIT)">Result</th>
                                     <th title="信心度 (0-100%)">Conf</th>
@@ -149,7 +160,8 @@
                                     <th title="Guardian 审核结果 (✅通过 / ⛔拦截)">Guard</th>
                                     <th title="价格精确百分位 (0-100%, 当前价在历史区间的位置)">Pos%</th>
                                     <th title="多周期对齐状态 (✅一致 / ➖分歧)">Aligned</th>
-                                    <th title="市场环境 (状态: UP/DOWN/CHOP + 位置: HIGH/MID/LOW)">Context</th>
+                                    <th title="市场状态 (TREND_UP/TREND_DOWN/CHOPPY)">Regime</th>
+                                    <th title="价格位置 (HIGH/MIDDLE/LOW)">Position</th>
                                 </tr>
                             </thead>
                             <tbody>

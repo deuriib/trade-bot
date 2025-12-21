@@ -9,7 +9,8 @@ from src.server.state import global_state
 # Input Model
 from pydantic import BaseModel
 class ControlCommand(BaseModel):
-    action: str  # start, pause, stop
+    action: str  # start, pause, stop, restart, set_interval
+    interval: int = None  # Optional: interval in minutes for set_interval action
 
 app = FastAPI(title="LLM-TradeBot Dashboard")
 
@@ -46,6 +47,8 @@ async def get_status():
         "system": {
             "running": global_state.is_running,
             "mode": global_state.execution_mode,
+            "cycle_counter": global_state.cycle_counter,
+            "current_cycle_id": global_state.current_cycle_id,
             "uptime_start": global_state.start_time,
             "last_heartbeat": global_state.last_update
         },
@@ -82,6 +85,18 @@ async def control_bot(cmd: ControlCommand):
     elif action == "stop":
         global_state.execution_mode = "Stopped"
         global_state.add_log("⏹️ System Stopped by User")
+    elif action == "restart":
+        global_state.execution_mode = "Restarting"
+        global_state.add_log("🔄 System Restarting by User...")
+        # Note: Actual restart requires external process management
+        # This just sets the flag for the main loop to handle
+    elif action == "set_interval":
+        if cmd.interval and cmd.interval in [1, 3, 5]:
+            global_state.cycle_interval = cmd.interval
+            global_state.add_log(f"⏱️ Cycle interval updated to {cmd.interval} minutes")
+            return {"status": "success", "interval": cmd.interval}
+        else:
+            raise HTTPException(status_code=400, detail="Invalid interval. Must be 1, 3, or 5 minutes.")
     else:
         raise HTTPException(status_code=400, detail="Invalid action")
     

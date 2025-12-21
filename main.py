@@ -157,7 +157,16 @@ class MultiAgentTradingBot:
         global_state.add_log(f"Starting trading cycle for {self.symbol}")
         
         try:
-            # ✅ Generate snapshot_id for this cycle
+            # ✅ Increment cycle counter and generate cycle ID
+            global_state.cycle_counter += 1
+            cycle_num = global_state.cycle_counter
+            cycle_id = f"cycle_{cycle_num:04d}_{int(time.time())}"
+            global_state.current_cycle_id = cycle_id
+            
+            print(f"🔄 Cycle #{cycle_num} | ID: {cycle_id}")
+            global_state.add_log(f"Cycle #{cycle_num} started")
+            
+            # ✅ Generate snapshot_id for this cycle (legacy compatibility)
             snapshot_id = f"snap_{int(time.time())}"
 
             # Step 1: 采样 - 数据先知 (The Oracle)
@@ -227,7 +236,7 @@ class MultiAgentTradingBot:
             
             # ✅ Decision Recording moved after Risk Audit for complete context
             # Saved to file still happens here for "raw" decision
-            self.saver.save_decision(asdict(vote_result), self.symbol, snapshot_id)
+            self.saver.save_decision(asdict(vote_result), self.symbol, snapshot_id, cycle_id=cycle_id)
             
             # ✅ Generate and Save LLM Context (LLM Logs)
             # 记录输入给决策引擎的完整上下文以及最终投票结果
@@ -258,6 +267,9 @@ class MultiAgentTradingBot:
                 decision_dict = asdict(vote_result)
                 decision_dict['action'] = actual_action  # ✅ Use 'wait' instead of 'hold'
                 decision_dict['symbol'] = self.symbol
+                decision_dict['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                decision_dict['cycle_number'] = global_state.cycle_counter
+                decision_dict['cycle_id'] = global_state.current_cycle_id
                 # Add implicit safe risk for Wait/Hold
                 decision_dict['risk_level'] = 'safe'
                 decision_dict['guardian_passed'] = True
@@ -346,6 +358,9 @@ class MultiAgentTradingBot:
             # ✅ Update Global State with FULL Decision info (Vote + Audit)
             decision_dict = asdict(vote_result)
             decision_dict['symbol'] = self.symbol
+            decision_dict['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            decision_dict['cycle_number'] = global_state.cycle_counter
+            decision_dict['cycle_id'] = global_state.current_cycle_id
             
             # Inject Risk Data
             decision_dict['risk_level'] = audit_result.risk_level.value

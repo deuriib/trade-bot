@@ -13,6 +13,11 @@ class SharedState:
     start_time: str = ""
     last_update: str = ""
     
+    # Cycle Tracking
+    cycle_counter: int = 0  # Total number of cycles since start
+    current_cycle_id: str = ""  # Current cycle identifier (cycle_NNNN_timestamp)
+    cycle_interval: int = 3  # Cycle interval in minutes (default 3)
+    
     # Market Data
     current_price: float = 0.0
     market_regime: str = "Unknown"

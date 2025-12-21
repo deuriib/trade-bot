@@ -199,13 +199,18 @@ class DataSaver:
         self,
         decision: Dict,
         symbol: str,
-        snapshot_id: str
+        snapshot_id: str,
+        cycle_id: str = None
     ) -> Dict[str, str]:
         """保存决策结果 (原 save_step6_decision)"""
         date_folder = self._get_date_folder('decisions')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        filename = f'decision_{symbol}_{timestamp}_{snapshot_id}.json'
+        # Use cycle_id if provided, otherwise fall back to snapshot_id
+        if cycle_id:
+            filename = f'decision_{symbol}_{cycle_id}_{timestamp}.json'
+        else:
+            filename = f'decision_{symbol}_{timestamp}_{snapshot_id}.json'
         path = os.path.join(date_folder, filename)
         
         with open(path, 'w', encoding='utf-8') as f:

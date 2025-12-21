@@ -208,8 +208,9 @@ function renderDecisionTable(history) {
             }
         }
 
-        // Render Context Badges
-        let contextHtml = '-';
+        // Render Regime and Position separately
+        let regHtml = '-';
+        let posHtml = '-';
         if (d.regime && d.position) {
             let reg = (d.regime.regime || 'unknown').toLowerCase();
             if (reg === 'trending_up') reg = 'UP';
@@ -222,14 +223,18 @@ function renderDecisionTable(history) {
             if (pos === 'middle') pos = 'MID';
             else if (pos === 'low') pos = 'LOW';
             else if (pos === 'high') pos = 'HIGH';
-            else pos = pos.toUpperCase().substring(0, 3);
+            else if (pos === 'upper') pos = 'UPPER';
+            else if (pos === 'lower') pos = 'LOWER';
+            else pos = pos.toUpperCase().substring(0, 5);
 
-            contextHtml = `<span class="badge neutral">${reg}</span> <span class="badge neutral">${pos}</span>`;
+            regHtml = `<span class="badge neutral">${reg}</span>`;
+            posHtml = `<span class="badge neutral">${pos}</span>`;
         }
 
         return `
             <tr>
                 <td>${time}</td>
+                <td>${d.cycle_number || '-'}</td>
                 <td>${symbol}</td>
                 <td class="${actionClass}">${action}</td>
                 <td>${conf}</td>
@@ -244,7 +249,8 @@ function renderDecisionTable(history) {
                 <td>${guardHtml}</td>
                 <td>${posPctHtml}</td>
                 <td>${alignedHtml}</td>
-                <td>${contextHtml}</td>
+                <td>${regHtml}</td>
+                <td>${posHtml}</td>
             </tr>
         `;
     }).join('');
@@ -340,6 +346,7 @@ updateDashboard();
 document.getElementById('btn-start').addEventListener('click', () => sendControl('start'));
 document.getElementById('btn-pause').addEventListener('click', () => sendControl('pause'));
 document.getElementById('btn-stop').addEventListener('click', () => sendControl('stop'));
+document.getElementById('btn-restart').addEventListener('click', () => sendControl('restart'));
 
 // Symbol Selector
 const symbolSelector = document.getElementById('symbol-selector');
@@ -352,6 +359,31 @@ if (symbolSelector) {
         alert(`Symbol switching to ${newSymbol} - Feature coming soon!\nCurrently only BTCUSDT is supported.`);
         // Reset to BTCUSDT
         e.target.value = 'BTCUSDT';
+    });
+}
+
+// Interval Selector
+const intervalSelector = document.getElementById('interval-selector');
+if (intervalSelector) {
+    intervalSelector.addEventListener('change', (e) => {
+        const newInterval = e.target.value;
+        console.log('Interval changed to:', newInterval, 'minutes');
+
+        // Send interval change to backend
+        fetch('/api/control', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set_interval', interval: parseInt(newInterval) })
+        })
+            .then(res => res.json())
+            .then(data => {
+                console.log('Interval updated:', data);
+                alert(`Cycle interval updated to ${newInterval} minutes.\nChanges will take effect on next cycle.`);
+            })
+            .catch(err => {
+                console.error('Failed to update interval:', err);
+                alert('Failed to update interval. Please try again.');
+            });
     });
 }
 
@@ -382,6 +414,12 @@ function renderSystemStatus(system) {
     } else {
         // Fallback
         statusEl.textContent = system.running ? "ONLINE" : "OFFLINE";
+    }
+
+    // Update Cycle Counter
+    const cycleEl = document.getElementById('cycle-counter');
+    if (cycleEl && system.cycle_counter !== undefined) {
+        cycleEl.textContent = `#${system.cycle_counter}`;
     }
 }
 
