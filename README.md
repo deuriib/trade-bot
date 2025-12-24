@@ -345,11 +345,13 @@ LLM-TradeBot/
 
 ### Collaboration Sequence
 
-![Multi-Agent Sequence](./docs/multi_agent_sequence_1766232561419.png)
+![Multi-Agent Sequence](./docs/multi_agent_sequence_9agents.png)
+
+*9 Agents working together: Oracle → Strategist → Prophet → Bull/Bear → Philosopher → Critic → Guardian → Executor*
 
 ### Data Flow Architecture
 
-![Data Flow Architecture](./docs/data_flow_diagram_1766231460411.png)
+![Data Flow Architecture](./docs/data_flow_diagram_9agents.png)
 
 **Architecture Details**:
 
