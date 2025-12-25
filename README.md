@@ -64,7 +64,7 @@ Before you start, make sure you have:
 
 ### Startup Flow
 
-![Quick Start Flow](./docs/quick_start_flow_1766232535088.png)
+![Quick Start Flow](./docs/quick_start_flow_9agents.png)
 
 ### Detailed Steps
 
@@ -221,7 +221,7 @@ tail -f logs/trading_$(date +%Y%m%d).log
 
 ### Directory Tree
 
-![Project Structure](./docs/project_structure_tree_1766232597202.png)
+![Project Structure](./docs/project_structure_tree_9agents.png)
 
 ### Directory Description
 
@@ -367,6 +367,11 @@ LLM-TradeBot/
 
 #### Detailed Flowchart
 
+![9-Agent Flowchart](./docs/detailed_flowchart_9agents.png)
+
+<details>
+<summary>📐 Mermaid Diagram (Interactive)</summary>
+
 ```mermaid
 graph TB
     subgraph "1️⃣ Data Collection Layer"
@@ -439,6 +444,8 @@ graph TB
     style TH fill:#1E3A5F,color:#fff
 ```
 
+</details>
+
 > 📖 **Detailed Docs**: See [Data Flow Analysis](./docs/data_flow_analysis.md) for complete mechanisms.
 
 ---
@@ -447,7 +454,7 @@ graph TB
 
 ### Data Storage Structure
 
-![Data Storage Hierarchy](./docs/data_storage_hierarchy_1766232628608.png)
+![Data Storage Hierarchy](./docs/data_storage_hierarchy_9agents.png)
 
 ### Storage Organization
 
