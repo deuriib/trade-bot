@@ -1,49 +1,61 @@
 """
-日志与监控模块
+日志与监控模块 - 兼容 PostgreSQL (Railway) 和 SQLite (Local)
 """
-import json
 import os
+import json
 from typing import Dict, List
 from pathlib import Path
 from datetime import datetime
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect
 from src.utils.logger import log
 
 
 class TradingLogger:
-    """交易日志记录器"""
+    """交易日志记录器 (支持 Postgres & SQLite)"""
     
     def __init__(self, db_path: str = "logs/trading.db"):
-        # 优先读取环境变量中的 DATABASE_URL (Railway 会自动提供)
-        # 如果没有，则回退到本地 SQLite
+        # 1. 尝试从环境变量获取数据库地址 (Railway 会自动注入 DATABASE_URL)
         self.db_url = os.getenv("DATABASE_URL")
+        self.is_postgres = False
         
-        if self.db_url:
-            # 针对 Railway/Postgres 的 URL 修正 (SQLAlchemy 需要 postgresql:// 开头)
+        # 2. 如果没有 DATABASE_URL，则回退到本地 SQLite
+        if not self.db_url:
+            self.db_path = Path(db_path)
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.db_url = f"sqlite:///{self.db_path}"
+            log.info(f"⚠️ 未检测到 DATABASE_URL，使用本地 SQLite: {self.db_path}")
+        else:
+            # 修正 URL 格式 (SQLAlchemy 需要 postgresql://)
             if self.db_url.startswith("postgres://"):
                 self.db_url = self.db_url.replace("postgres://", "postgresql://", 1)
-            db_host = self.db_url.split('@')[1].split('/')[0] if '@' in self.db_url else 'Railway'
-            log.info(f"使用 PostgreSQL 数据库: {db_host}")
-            db_type = "PostgreSQL"
-        else:
-            # 本地开发使用 SQLite
-            db_path = Path(db_path)
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            self.db_url = f"sqlite:///{db_path}"
-            log.info(f"使用 SQLite 数据库: {db_path}")
-            db_type = "SQLite"
-        
-        self.engine = create_engine(self.db_url)
-        self._init_database()
-        log.info(f"交易日志系统初始化完成，使用数据库: {db_type}")
+            self.is_postgres = True
+            log.info("✅ 检测到 DATABASE_URL，连接 PostgreSQL 数据库...")
+
+        # 3. 初始化数据库引擎
+        try:
+            self.engine = create_engine(self.db_url)
+            self._init_database()
+            log.info(f"交易日志系统初始化完成，使用数据库: {'PostgreSQL' if self.is_postgres else 'SQLite'}")
+        except Exception as e:
+            log.error(f"❌ 数据库连接失败: {e}")
+            raise e
     
     def _init_database(self):
-        """初始化数据库"""
-        with self.engine.begin() as conn:
-            # 决策记录表
-            conn.execute(text('''
+        """初始化数据库表结构"""
+        # 检查表是否存在
+        insp = inspect(self.engine)
+        
+        # 针对不同数据库的自增主键语法
+        if self.is_postgres:
+            id_type = "SERIAL"
+        else:
+            id_type = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        
+        # 定义建表 SQL
+        tables = {
+            "decisions": f"""
                 CREATE TABLE IF NOT EXISTS decisions (
-                    id SERIAL PRIMARY KEY,
+                    id {id_type},
                     timestamp TEXT NOT NULL,
                     symbol TEXT NOT NULL,
                     action TEXT NOT NULL,
@@ -57,13 +69,12 @@ class TradingLogger:
                     llm_raw_output TEXT,
                     risk_validated BOOLEAN,
                     risk_message TEXT
+                    {', PRIMARY KEY (id)' if self.is_postgres else ''}
                 )
-            '''))
-            
-            # 执行记录表
-            conn.execute(text('''
+            """,
+            "executions": f"""
                 CREATE TABLE IF NOT EXISTS executions (
-                    id SERIAL PRIMARY KEY,
+                    id {id_type},
                     timestamp TEXT NOT NULL,
                     symbol TEXT NOT NULL,
                     action TEXT NOT NULL,
@@ -74,13 +85,12 @@ class TradingLogger:
                     take_profit REAL,
                     orders_data TEXT,
                     message TEXT
+                    {', PRIMARY KEY (id)' if self.is_postgres else ''}
                 )
-            '''))
-            
-            # 交易记录表
-            conn.execute(text('''
+            """,
+            "trades": f"""
                 CREATE TABLE IF NOT EXISTS trades (
-                    id SERIAL PRIMARY KEY,
+                    id {id_type},
                     open_time TEXT NOT NULL,
                     close_time TEXT,
                     symbol TEXT NOT NULL,
@@ -92,13 +102,12 @@ class TradingLogger:
                     pnl REAL,
                     pnl_pct REAL,
                     status TEXT
+                    {', PRIMARY KEY (id)' if self.is_postgres else ''}
                 )
-            '''))
-            
-            # 性能指标表
-            conn.execute(text('''
+            """,
+            "performance": f"""
                 CREATE TABLE IF NOT EXISTS performance (
-                    id SERIAL PRIMARY KEY,
+                    id {id_type},
                     timestamp TEXT NOT NULL,
                     total_trades INTEGER,
                     winning_trades INTEGER,
@@ -108,14 +117,22 @@ class TradingLogger:
                     sharpe_ratio REAL,
                     max_drawdown_pct REAL,
                     account_balance REAL
+                    {', PRIMARY KEY (id)' if self.is_postgres else ''}
                 )
-            '''))
-    
+            """
+        }
+
+        # 执行建表
+        with self.engine.begin() as conn:
+            for table_name, sql in tables.items():
+                if not insp.has_table(table_name):
+                    conn.execute(text(sql))
+
     def log_decision(self, decision: Dict, market_context: Dict, risk_result: tuple):
         """记录决策"""
         is_valid, modified_decision, risk_message = risk_result
         
-        query = text('''
+        sql = text('''
             INSERT INTO decisions (
                 timestamp, symbol, action, confidence, leverage,
                 position_size_pct, stop_loss_pct, take_profit_pct,
@@ -128,7 +145,7 @@ class TradingLogger:
         ''')
         
         with self.engine.begin() as conn:
-            conn.execute(query, {
+            conn.execute(sql, {
                 'timestamp': decision.get('timestamp'),
                 'symbol': decision.get('symbol'),
                 'action': decision.get('action'),
@@ -148,7 +165,7 @@ class TradingLogger:
     
     def log_execution(self, execution_result: Dict):
         """记录执行结果"""
-        query = text('''
+        sql = text('''
             INSERT INTO executions (
                 timestamp, symbol, action, success,
                 entry_price, quantity, stop_loss, take_profit,
@@ -159,7 +176,7 @@ class TradingLogger:
         ''')
         
         with self.engine.begin() as conn:
-            conn.execute(query, {
+            conn.execute(sql, {
                 'timestamp': execution_result.get('timestamp'),
                 'symbol': execution_result.get('symbol', ''),
                 'action': execution_result.get('action'),
@@ -176,14 +193,14 @@ class TradingLogger:
     
     def open_trade(self, trade_info: Dict):
         """开启新交易"""
-        query = text('''
+        sql = text('''
             INSERT INTO trades (
                 open_time, symbol, side, entry_price, quantity, leverage, status
             ) VALUES (:open_time, :symbol, :side, :entry_price, :quantity, :leverage, :status)
         ''')
         
         with self.engine.begin() as conn:
-            conn.execute(query, {
+            conn.execute(sql, {
                 'open_time': trade_info.get('timestamp'),
                 'symbol': trade_info.get('symbol'),
                 'side': trade_info.get('side'),
@@ -196,35 +213,37 @@ class TradingLogger:
     def close_trade(self, symbol: str, exit_price: float, pnl: float):
         """关闭交易"""
         with self.engine.begin() as conn:
-            # 查找最近的未关闭交易
-            result = conn.execute(text('''
-                SELECT id, entry_price, quantity FROM trades
+            # 1. 查找最近的未关闭交易
+            select_sql = text('''
+                SELECT id, entry_price FROM trades
                 WHERE symbol = :symbol AND status = 'OPEN'
                 ORDER BY id DESC LIMIT 1
-            '''), {'symbol': symbol})
+            ''')
+            result = conn.execute(select_sql, {'symbol': symbol}).fetchone()
             
-            row = result.fetchone()
-            if row:
-                trade_id, entry_price, quantity = row
-                
+            if result:
+                trade_id, entry_price = result
                 pnl_pct = ((exit_price - entry_price) / entry_price) * 100
                 
-                conn.execute(text('''
+                # 2. 更新交易状态
+                update_sql = text('''
                     UPDATE trades
                     SET close_time = :close_time, exit_price = :exit_price, 
                         pnl = :pnl, pnl_pct = :pnl_pct, status = 'CLOSED'
-                    WHERE id = :trade_id
-                '''), {
+                    WHERE id = :id
+                ''')
+                
+                conn.execute(update_sql, {
                     'close_time': datetime.now().isoformat(),
                     'exit_price': exit_price,
                     'pnl': pnl,
                     'pnl_pct': pnl_pct,
-                    'trade_id': trade_id
+                    'id': trade_id
                 })
     
     def log_performance(self, performance: Dict):
         """记录性能指标"""
-        query = text('''
+        sql = text('''
             INSERT INTO performance (
                 timestamp, total_trades, winning_trades, losing_trades,
                 win_rate, total_pnl, sharpe_ratio, max_drawdown_pct, account_balance
@@ -233,7 +252,7 @@ class TradingLogger:
         ''')
         
         with self.engine.begin() as conn:
-            conn.execute(query, {
+            conn.execute(sql, {
                 'timestamp': datetime.now().isoformat(),
                 'total_trades': performance.get('total_trades', 0),
                 'winning_trades': performance.get('winning_trades', 0),
@@ -247,42 +266,26 @@ class TradingLogger:
     
     def get_recent_decisions(self, limit: int = 10) -> List[Dict]:
         """获取最近的决策"""
+        sql = text('SELECT * FROM decisions ORDER BY id DESC LIMIT :limit')
+        
         with self.engine.connect() as conn:
-            result = conn.execute(text('''
-                SELECT * FROM decisions
-                ORDER BY id DESC LIMIT :limit
-            '''), {'limit': limit})
-            
-            rows = result.fetchall()
-            # Convert rows to dictionaries
-            return [dict(row._mapping) for row in rows]
+            result = conn.execute(sql, {'limit': limit})
+            return [dict(row._mapping) for row in result]
     
     def get_trade_statistics(self) -> Dict:
         """获取交易统计"""
         with self.engine.connect() as conn:
-            # 总交易数
-            result = conn.execute(text('SELECT COUNT(*) FROM trades WHERE status = \'CLOSED\''))
-            total_trades = result.scalar() or 0
-            
-            # 盈利交易
-            result = conn.execute(text('SELECT COUNT(*) FROM trades WHERE status = \'CLOSED\' AND pnl > 0'))
-            winning_trades = result.scalar() or 0
-            
-            # 亏损交易
-            result = conn.execute(text('SELECT COUNT(*) FROM trades WHERE status = \'CLOSED\' AND pnl < 0'))
-            losing_trades = result.scalar() or 0
-            
-            # 总盈亏
-            result = conn.execute(text('SELECT SUM(pnl) FROM trades WHERE status = \'CLOSED\''))
-            total_pnl = result.scalar() or 0
-            
-            # 胜率
-            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-            
-            return {
-                'total_trades': total_trades,
-                'winning_trades': winning_trades,
-                'losing_trades': losing_trades,
-                'win_rate': win_rate,
-                'total_pnl': total_pnl
-            }
+            total_trades = conn.execute(text("SELECT COUNT(*) FROM trades WHERE status = 'CLOSED'")).scalar() or 0
+            winning_trades = conn.execute(text("SELECT COUNT(*) FROM trades WHERE status = 'CLOSED' AND pnl > 0")).scalar() or 0
+            losing_trades = conn.execute(text("SELECT COUNT(*) FROM trades WHERE status = 'CLOSED' AND pnl < 0")).scalar() or 0
+            total_pnl = conn.execute(text("SELECT SUM(pnl) FROM trades WHERE status = 'CLOSED'")).scalar() or 0
+        
+        win_rate = (winning_trades / total_trades * 100) if total_trades and total_trades > 0 else 0
+        
+        return {
+            'total_trades': total_trades or 0,
+            'winning_trades': winning_trades or 0,
+            'losing_trades': losing_trades or 0,
+            'win_rate': win_rate,
+            'total_pnl': total_pnl
+        }
