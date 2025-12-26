@@ -173,6 +173,8 @@ class DataSyncAgent:
             # 等待所有请求完成
             k5m, k15m, k1h, q_data, b_funding, b_oi = await asyncio.gather(*tasks)
             
+            log.info(f"[{symbol}] Data fetched: 5m={len(k5m)}, 15m={len(k15m)}, 1h={len(k1h)}")
+            
             # 标记首次加载完成
             if not self._initial_load_complete:
                 self._initial_load_complete = True

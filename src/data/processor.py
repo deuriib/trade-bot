@@ -92,9 +92,12 @@ class MarketDataProcessor:
         # 2. 检查数据量是否足够
         required_bars = max(self.INDICATOR_PARAMS['sma'])  # 50
         if len(klines) < required_bars:
+            # Enhanced debugging: log first few items to see what we got
+            preview = klines[:3] if klines else "Empty"
             log.error(
                 f"[{symbol}] K线数量不足: 需要>={required_bars}, "
-                f"实际={len(klines)}"
+                f"实际={len(klines)}, "
+                f"Data Preview: {preview}"
             )
             return pd.DataFrame()
         

@@ -33,118 +33,68 @@ class TrendSubAgent:
     
     def analyze(self, snapshot: MarketSnapshot) -> Dict:
         """
-        计算趋势得分 (None表示无数据)
+        计算趋势得分 (基于特定时间窗口)
+        1h Data (EMA24): Judge recent 1 day Trend (40%)
+        15m Data (EMA24): Judge recent 6 hours Trend (30%)
+        5m Data (EMA12): Judge recent 1 hour Trend (30%)
         """
         # Init specific scores to None
-        trend_1h_score = None
-        trend_15m_score = None
-        trend_5m_score = None
+        trend_1h_score = 0
+        trend_15m_score = 0
+        trend_5m_score = 0
         details = {}
         
-        # 1. 1h 主趋势判断 (权重40%)
-        stable_1h = snapshot.stable_1h
-        if not stable_1h.empty and len(stable_1h) > 50:
-            if 'ema_12' in stable_1h.columns and 'ema_26' in stable_1h.columns:
-                last_ema_12 = stable_1h['ema_12'].iloc[-1]
-                last_ema_26 = stable_1h['ema_26'].iloc[-1]
-            else:
-                ema_12 = EMAIndicator(close=stable_1h['close'], window=12).ema_indicator()
-                ema_26 = EMAIndicator(close=stable_1h['close'], window=26).ema_indicator()
-                last_ema_12 = ema_12.iloc[-1]
-                last_ema_26 = ema_26.iloc[-1]
-            
-            if last_ema_12 > last_ema_26:
-                trend_1h_score = 40
-                trend_1h_status = "上涨"
-            else:
-                trend_1h_score = -40
-                trend_1h_status = "下跌"
-            
-            details['1h_trend'] = trend_1h_status
-            details['1h_ema12'] = float(last_ema_12)
-            details['1h_ema26'] = float(last_ema_26)
-        
-        # 2. 5m 短期动量 (权重20%)
-        live_5m = snapshot.live_5m
-        if live_5m:
-            open_price = float(live_5m.get('open', 0))
-            close_price = float(live_5m.get('close', 0))
-            
-            if open_price > 0:
-                candle_change = (close_price - open_price) / open_price
+        # Helper for Trend Logic
+        def calculate_trend(df, window, label, weight):
+            if df.empty or len(df) < window + 2:
+                return 0, "数据不足"
                 
-                if candle_change > 0.005: 
-                    trend_5m_score = 30
-                    details['live_correction'] = "5m强劲拉升"
-                elif candle_change > 0.002:
-                    trend_5m_score = 15
-                    details['live_correction'] = "5m温和上涨"
-                elif candle_change < -0.005: 
-                    trend_5m_score = -30
-                    details['live_correction'] = "5m强劲下跌"
-                elif candle_change < -0.002: 
-                    trend_5m_score = -15
-                    details['live_correction'] = "5m温和下跌"
-                else:
-                    trend_5m_score = 0
-                    details['live_correction'] = "5m正常波动"
-                
-                details['live_candle_change'] = f"{candle_change*100:.2f}%"
-        
-        # 3. 15m 中期确认 (权重30%)
-        stable_15m = snapshot.stable_15m
-        if not stable_15m.empty and len(stable_15m) > 30:
-            if 'macd_diff' in stable_15m.columns:
-                current_macd = stable_15m['macd_diff'].iloc[-1]
-                prev_macd = stable_15m['macd_diff'].iloc[-2]
-            else:
-                macd_ind = MACD(close=stable_15m['close'])
-                macd_diff = macd_ind.macd_diff()
-                current_macd = macd_diff.iloc[-1]
-                prev_macd = macd_diff.iloc[-2]
+            # Calculate EMA for the specific window
+            ema_ind = EMAIndicator(close=df['close'], window=window)
+            ema_series = ema_ind.ema_indicator()
             
-            if current_macd > 0:
-                if current_macd > prev_macd:
-                    trend_15m_score = 30
-                    trend_15m_status = "上涨加速"
-                else:
-                    trend_15m_score = 15
-                    trend_15m_status = "多头回遮"
-            elif current_macd < 0:
-                if current_macd < prev_macd:
-                    trend_15m_score = -30
-                    trend_15m_status = "下跌加速"
-                else:
-                    trend_15m_score = -15
-                    trend_15m_status = "空头反弹"
-            else:
-                trend_15m_score = 0
-                trend_15m_status = "震荡"
+            current_price = df['close'].iloc[-1]
+            current_ema = ema_series.iloc[-1]
+            prev_ema = ema_series.iloc[-2]
             
-            details['15m_trend'] = trend_15m_status
-            details['15m_macd_diff'] = float(current_macd)
+            # Trend Determination
+            # Up: Price > EMA and EMA is rising
+            if current_price > current_ema and current_ema > prev_ema:
+                return weight, "上涨"
+            # Down: Price < EMA and EMA is falling
+            elif current_price < current_ema and current_ema < prev_ema:
+                return -weight, "下跌"
+            # Sideways: Mixed signals
+            else:
+                return 0, "震荡"
+
+        # 1. 1h Trend (Recent 1 Day -> 24 bars)
+        trend_1h_score, status_1h = calculate_trend(snapshot.stable_1h, 24, "1h", 40)
+        details['1h_trend'] = status_1h
         
-        # Calculate Total Score
-        # If Main Trend (1h) is missing, Total is None
-        total_score = None
-        if trend_1h_score is not None:
-             total_score = trend_1h_score
-             # Add other components if they exist, otherwise treat as 0 for sum
-             # Or better: if 15m missing, assume neutral? Yes, safer than failing.
-             total_score += (trend_15m_score or 0)
-             total_score += (trend_5m_score or 0)
+        # 2. 15m Trend (Recent 6 Hours -> 24 bars)
+        trend_15m_score, status_15m = calculate_trend(snapshot.stable_15m, 24, "15m", 30)
+        details['15m_trend'] = status_15m
         
-             # Limit range
-             total_score = max(-100, min(100, total_score))
+        # 3. 5m Trend (Recent 1 Hour -> 12 bars)
+        # Combine stable + live for most recent view
+        # But using stable is safer for EMA consistency.
+        trend_5m_score, status_5m = calculate_trend(snapshot.stable_5m, 12, "5m", 30)
+        # Rename output for consistency with prompt
+        details['5m_trend'] = status_5m
+        
+        # 4. Total Score
+        total_score = trend_1h_score + trend_15m_score + trend_5m_score
+        total_score = max(-100, min(100, total_score))
         
         return {
-            'score': total_score if total_score is not None else 0,
+            'score': total_score,
             'details': details,
-            'confidence': abs(total_score) if total_score is not None else 0,
-            'total_trend_score': total_score if total_score is not None else 0,  # 修复：防止 None 导致格式化报错
-            'trend_1h_score': trend_1h_score if trend_1h_score is not None else 0,
-            'trend_15m_score': trend_15m_score if trend_15m_score is not None else 0,
-            'trend_5m_score': trend_5m_score if trend_5m_score is not None else 0
+            'confidence': abs(total_score),
+            'total_trend_score': total_score,
+            'trend_1h_score': trend_1h_score,
+            'trend_15m_score': trend_15m_score,
+            'trend_5m_score': trend_5m_score
         }
 
 
