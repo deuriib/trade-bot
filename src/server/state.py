@@ -167,13 +167,45 @@ class SharedState:
         
     def add_log(self, message: str):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.recent_logs.append(f"[{timestamp}] {message}")
+        # Ensure message has timestamp if not present
+        if not message.startswith("["):
+            message = f"[{timestamp}] {message}"
+            
+        self.recent_logs.append(message)
         if len(self.recent_logs) > 500:
             self.recent_logs.pop(0)
             
         # Push to file logger (Clean Trading Log)
+        # Avoid recursion: add_log -> log.info -> sink -> add_log
         log.bind(dashboard=True).info(message)
+    
+    def register_log_sink(self):
+        """Register a sink to capture all system logs to dashboard"""
+        def sink(message):
+            record = message.record
+            # Skip logs that are already explicitly for dashboard (avoid duplicates/loops)
+            if record["extra"].get("dashboard"):
+                return
+                
+            # Format: YYYY-MM-DD HH:mm:ss | LEVEL | module:func - message
+            time_str = record["time"].strftime("%Y-%m-%d %H:%M:%S")
+            level = record["level"].name
+            module = record["name"]
+            func = record["function"]
+            msg = record["message"]
+            
+            formatted = f"{time_str} | {level:<8} | {module}:{func} - {msg}"
+            
+            # Directly append to recent_logs (bypass add_log to avoid re-logging)
+            self.recent_logs.append(formatted)
+            if len(self.recent_logs) > 500:
+                self.recent_logs.pop(0)
+        
+        # Add sink for INFO and above
+        log.add(sink, level="INFO")
 
 # Global Singleton
 global_state = SharedState()
 global_state.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# Auto-register the sink
+global_state.register_log_sink()
