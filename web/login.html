@@ -207,6 +207,9 @@
         const errorEl = document.getElementById('error-msg');
         const hintEl = document.getElementById('login-hint');
 
+        // Clear stale session
+        localStorage.removeItem('user_role');
+
         // Check Deployment Mode
         async function checkMode() {
             try {

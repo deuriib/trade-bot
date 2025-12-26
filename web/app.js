@@ -63,7 +63,8 @@ let currentActivePositions = []; // To share with table renderer
 // Helper to verify role permission
 function verifyRole() {
     const role = localStorage.getItem('user_role');
-    if (role === 'user') {
+    console.log('🔐 Verifying Role:', role);
+    if (!role || role === 'user') {
         alert("User mode: No permission to perform this action.");
         return false;
     }
