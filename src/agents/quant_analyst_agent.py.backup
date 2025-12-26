@@ -138,13 +138,13 @@ class TrendSubAgent:
              total_score = max(-100, min(100, total_score))
         
         return {
-            'score': total_score if total_score is not None else 0,
+            'score': total_score if total_score is not None else 0, # Legacy compact fallback
             'details': details,
             'confidence': abs(total_score) if total_score is not None else 0,
-            'total_trend_score': total_score if total_score is not None else 0,  # 修复：防止 None 导致格式化报错
-            'trend_1h_score': trend_1h_score if trend_1h_score is not None else 0,
-            'trend_15m_score': trend_15m_score if trend_15m_score is not None else 0,
-            'trend_5m_score': trend_5m_score if trend_5m_score is not None else 0
+            'total_trend_score': total_score, # Can be None
+            'trend_1h_score': trend_1h_score,
+            'trend_15m_score': trend_15m_score,
+            'trend_5m_score': trend_5m_score
         }
 
 
@@ -232,13 +232,13 @@ class OscillatorSubAgent:
             'score': total_score if total_score is not None else 0,
             'details': details,
             'confidence': abs(total_score) if total_score is not None else 0,
-            'total_osc_score': total_score if total_score is not None else 0,  # 修复：防止 None 导致格式化报错
-            'osc_5m_score': osc_5m_score if osc_5m_score is not None else 0,
-            'osc_15m_score': osc_15m_score if osc_15m_score is not None else 0,
-            'osc_1h_score': osc_1h_score if osc_1h_score is not None else 0,
-            'rsi_5m': details.get('5m_rsi', 50),
-            'rsi_15m': details.get('15m_rsi', 50),
-            'rsi_1h': details.get('1h_rsi', 50)
+            'total_oscillator_score': total_score,
+            'osc_5m_score': osc_5m_score,
+            'osc_15m_score': osc_15m_score,
+            'osc_1h_score': osc_1h_score,
+            'rsi_5m': details.get('5m_rsi'),
+            'rsi_15m': details.get('15m_rsi'),
+            'rsi_1h': details.get('1h_rsi')
         }
 
 
@@ -309,8 +309,8 @@ class SentimentSubAgent:
             'score': total_score if total_score is not None else 0,
             'details': details,
             'confidence': abs(total_score) if total_score is not None else 0,
-            'total_sentiment_score': total_score if total_score is not None else 0,  # 修复：防止 None 导致格式化报错
-            'oi_change_24h_pct': oi_change_pct if oi_change_pct is not None else 0
+            'total_sentiment_score': total_score,
+            'oi_change_24h_pct': oi_change_pct
         }
 
 

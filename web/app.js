@@ -751,10 +751,11 @@ function renderSystemStatus(system) {
         cycleEl.textContent = `#${system.cycle_counter}`;
     }
 
-    // Sync Interval Selector with backend value
+    // Sync Interval Selector with backend value (default to 3 min)
     const intervalSel = document.getElementById('interval-selector');
-    if (intervalSel && system.cycle_interval !== undefined) {
-        intervalSel.value = system.cycle_interval.toString();
+    if (intervalSel) {
+        const interval = system.cycle_interval !== undefined ? system.cycle_interval : 3;
+        intervalSel.value = interval.toString();
     }
 
     // Update Environment Indicator (Test Mode / Live Trading)
