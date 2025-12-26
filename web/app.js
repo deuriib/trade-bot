@@ -975,14 +975,14 @@ function showDemoWarningModal(onConfirm) {
     content.innerHTML = `
         <div style="text-align: center;">
             <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
-            <h2 style="color: #ff8c00; margin: 0 0 15px 0; font-size: 22px;">Demo 模式提示</h2>
+            <h2 style="color: #ff8c00; margin: 0 0 15px 0; font-size: 22px;">Demo Mode Notice</h2>
             <p style="color: #e0e6ed; margin: 0 0 20px 0; line-height: 1.6; font-size: 15px;">
-                当前使用的是 <strong style="color: #ff8c00;">默认 LLM API</strong>，<br>
-                仅支持运行 <strong style="color: #ff8c00;">20 分钟</strong>
+                You are using the <strong style="color: #ff8c00;">default LLM API</strong>,<br>
+                which is limited to <strong style="color: #ff8c00;">20 minutes</strong> of usage.
             </p>
             <div style="background: rgba(255, 140, 0, 0.1); border-left: 3px solid #ff8c00; padding: 12px; margin-bottom: 20px; text-align: left;">
                 <p style="margin: 0; color: #94a3b8; font-size: 13px; line-height: 1.5;">
-                    💡 如需无限制使用，请在 <strong>Settings > API Keys</strong> 中填写您自己的 API Key
+                    💡 For unlimited usage, please configure your own API Key in <strong>Settings > API Keys</strong>
                 </p>
             </div>
             <div style="display: flex; gap: 15px; justify-content: center;">
@@ -994,7 +994,7 @@ function showDemoWarningModal(onConfirm) {
                     border-radius: 6px;
                     font-size: 14px;
                     cursor: pointer;
-                ">取消</button>
+                ">Cancel</button>
                 <button id="demo-warning-confirm" style="
                     background: linear-gradient(135deg, #00ff9d 0%, #00cc7e 100%);
                     color: #1a202c;
@@ -1004,7 +1004,7 @@ function showDemoWarningModal(onConfirm) {
                     font-size: 14px;
                     font-weight: bold;
                     cursor: pointer;
-                ">继续启动</button>
+                ">Continue</button>
             </div>
         </div>
     `;
@@ -1120,7 +1120,7 @@ function handleDemoMode(demo) {
         // Disable start button
         if (btnStart) {
             btnStart.disabled = true;
-            btnStart.title = 'Demo 时间已用尽，请配置您自己的 API Key';
+            btnStart.title = 'Demo time expired. Please configure your own API Key';
             btnStart.style.opacity = '0.5';
             btnStart.style.cursor = 'not-allowed';
         }
@@ -1205,20 +1205,20 @@ function showDemoExpiredModal() {
     content.innerHTML = `
         <div style="text-align: center;">
             <div style="font-size: 48px; margin-bottom: 20px;">⏰</div>
-            <h2 style="color: #ff8c00; margin: 0 0 15px 0; font-size: 24px;">Demo 时间已用尽</h2>
+            <h2 style="color: #ff8c00; margin: 0 0 15px 0; font-size: 24px;">Demo Time Expired</h2>
             <p style="color: #94a3b8; margin: 0 0 10px 0; line-height: 1.6;">
-                您已使用默认 API <strong style="color: #ff8c00;">20 分钟</strong>
+                You have used the default API for <strong style="color: #ff8c00;">20 minutes</strong>
             </p>
             <p style="color: #64748b; margin: 0 0 25px 0; font-size: 14px;">
-                如需继续使用，请配置您自己的 API Key
+                Please configure your own API Key to continue
             </p>
             <div style="background: rgba(255, 140, 0, 0.1); border-left: 3px solid #ff8c00; padding: 15px; margin-bottom: 25px; text-align: left;">
                 <p style="margin: 0; color: #e0e6ed; font-size: 14px; line-height: 1.5;">
-                    <strong>如何解除限制:</strong><br>
-                    1. 点击右上角 <strong>⚙️ Settings</strong><br>
-                    2. 在 <strong>API Keys</strong> 标签页填写您的 DeepSeek/OpenAI API Key<br>
-                    3. 点击 <strong>Save Changes</strong> 保存配置<br>
-                    4. 重启程序后即可无限制使用
+                    <strong>How to unlock:</strong><br>
+                    1. Click <strong>⚙️ Settings</strong> in the top right<br>
+                    2. Enter your DeepSeek/OpenAI API Key in <strong>API Keys</strong> tab<br>
+                    3. Click <strong>Save Changes</strong><br>
+                    4. Restart the bot to use without limits
                 </p>
             </div>
             <button id="close-demo-expired-btn" style="
@@ -1232,7 +1232,7 @@ function showDemoExpiredModal() {
                 cursor: pointer;
                 transition: all 0.3s;
             ">
-                我知道了
+                Got it
             </button>
         </div>
     `;

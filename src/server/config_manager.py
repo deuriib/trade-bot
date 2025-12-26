@@ -47,70 +47,80 @@ class ConfigManager:
 
     def update_config(self, updates: Dict[str, Any]) -> bool:
         """Update .env file with new values"""
-        if not os.path.exists(self.env_path):
-            return False
-            
-        # Map frontend keys to .env keys
-        key_map = {
-            "binance_api_key": "BINANCE_API_KEY",
-            "binance_secret_key": "BINANCE_SECRET_KEY",
-            "deepseek_api_key": "DEEPSEEK_API_KEY",
-            "openai_api_key": "OPENAI_API_KEY",
-            "claude_api_key": "CLAUDE_API_KEY",
-            "qwen_api_key": "QWEN_API_KEY",
-            "gemini_api_key": "GEMINI_API_KEY",
-            "symbol": "TRADING_SYMBOL",
-            "leverage": "LEVERAGE",
-            "run_mode": "RUN_MODE",
-            "llm_provider": "LLM_PROVIDER"
-        }
-        
-        # Flatten updates
-        flat_updates = {}
-        for section, values in updates.items():
-            for k, v in values.items():
-                if k in key_map and v:  # Only update if value is provided (ignore empty masked keys)
-                    # Don't update if it's still masked
-                    if self._is_masked(v):
-                        continue
-                    flat_updates[key_map[k]] = str(v)
-
-        if not flat_updates:
-            return True # Nothing to update
-            
-        # Read all lines
-        with open(self.env_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            
-        new_lines = []
-        updated_keys = set()
-        
-        for line in lines:
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                new_lines.append(line)
-                continue
+        try:
+            if not os.path.exists(self.env_path):
+                print(f"[ConfigManager] .env file not found at: {self.env_path}")
+                return False
                 
-            if '=' in stripped:
-                key, _ = stripped.split('=', 1)
-                key = key.strip()
-                if key in flat_updates:
-                    new_lines.append(f"{key}={flat_updates[key]}\n")
-                    updated_keys.add(key)
+            # Map frontend keys to .env keys
+            key_map = {
+                "binance_api_key": "BINANCE_API_KEY",
+                "binance_secret_key": "BINANCE_SECRET_KEY",
+                "deepseek_api_key": "DEEPSEEK_API_KEY",
+                "openai_api_key": "OPENAI_API_KEY",
+                "claude_api_key": "CLAUDE_API_KEY",
+                "qwen_api_key": "QWEN_API_KEY",
+                "gemini_api_key": "GEMINI_API_KEY",
+                "symbol": "TRADING_SYMBOL",
+                "leverage": "LEVERAGE",
+                "run_mode": "RUN_MODE",
+                "llm_provider": "LLM_PROVIDER"
+            }
+            
+            # Flatten updates
+            flat_updates = {}
+            for section, values in updates.items():
+                if not isinstance(values, dict):
+                    continue
+                for k, v in values.items():
+                    if k in key_map and v:  # Only update if value is provided (ignore empty masked keys)
+                        # Don't update if it's still masked
+                        if self._is_masked(str(v)):
+                            continue
+                        flat_updates[key_map[k]] = str(v)
+
+            if not flat_updates:
+                return True # Nothing to update
+                
+            # Read all lines
+            with open(self.env_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                
+            new_lines = []
+            updated_keys = set()
+            
+            for line in lines:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    new_lines.append(line)
+                    continue
+                    
+                if '=' in stripped:
+                    key, _ = stripped.split('=', 1)
+                    key = key.strip()
+                    if key in flat_updates:
+                        new_lines.append(f"{key}={flat_updates[key]}\n")
+                        updated_keys.add(key)
+                    else:
+                        new_lines.append(line)
                 else:
                     new_lines.append(line)
-            else:
-                new_lines.append(line)
+                    
+            # Append new keys if any (though usually we expect them to exist)
+            for key, val in flat_updates.items():
+                if key not in updated_keys:
+                    new_lines.append(f"{key}={val}\n")
+                    
+            with open(self.env_path, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
                 
-        # Append new keys if any (though usually we expect them to exist)
-        for key, val in flat_updates.items():
-            if key not in updated_keys:
-                new_lines.append(f"{key}={val}\n")
-                
-        with open(self.env_path, 'w', encoding='utf-8') as f:
-            f.writelines(new_lines)
-            
-        return True
+            print(f"[ConfigManager] Config updated successfully: {list(flat_updates.keys())}")
+            return True
+        except Exception as e:
+            print(f"[ConfigManager] Error updating config: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def get_prompt(self) -> str:
         """Get current custom prompt or empty string"""
