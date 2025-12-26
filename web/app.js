@@ -71,6 +71,38 @@ function verifyRole() {
     return true;
 }
 
+// Apply UI restrictions based on user role
+function applyRoleRestrictions() {
+    const role = localStorage.getItem('user_role');
+    console.log('🎨 Applying UI restrictions for role:', role);
+
+    if (!role || role === 'user') {
+        // User role: Disable all controls
+        const controlButtons = [
+            'btn-start',
+            'btn-pause',
+            'btn-stop',
+            'btn-settings',
+            'btn-logout',
+            'interval-selector'
+        ];
+
+        controlButtons.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.disabled = true;
+                element.style.opacity = '0.4';
+                element.style.cursor = 'not-allowed';
+                element.title = 'User mode: Read-only access';
+            }
+        });
+
+        console.log('✅ User role restrictions applied');
+    } else {
+        console.log('✅ Admin role: Full access granted');
+    }
+}
+
 // Logout Function
 window.logout = function () {
     if (!verifyRole()) return;
@@ -892,6 +924,7 @@ function renderLogs(logs) {
 // Init
 initChart();
 setupEventListeners();
+applyRoleRestrictions(); // Apply role-based UI restrictions
 setInterval(updateDashboard, 2000); // Poll every 2s
 updateDashboard();
 
