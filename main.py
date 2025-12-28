@@ -879,7 +879,7 @@ class MultiAgentTradingBot:
                 'sentiment': q_sent.get('total_sentiment_score', 0),
                 # Prophet
                 'prophet': predict_result.probability_up,
-                # 🐂🐻 Bull/Bear Agent Perspectives
+                # 🐂🐻 Bullish/Bearish Perspective Analysis
                 'bull_confidence': llm_decision.get('bull_perspective', {}).get('bull_confidence', 50),
                 'bear_confidence': llm_decision.get('bear_perspective', {}).get('bear_confidence', 50),
                 'bull_stance': llm_decision.get('bull_perspective', {}).get('stance', 'UNKNOWN'),
@@ -953,18 +953,18 @@ class MultiAgentTradingBot:
                     cycle_id=cycle_id
                 )
             
-            # LOG: Bull/Bear Agents (show first for adversarial context)
+            # LOG: Bullish/Bearish Perspective (show first for adversarial context)
             bull_conf = llm_decision.get('bull_perspective', {}).get('bull_confidence', 50)
             bear_conf = llm_decision.get('bear_perspective', {}).get('bear_confidence', 50)
             bull_stance = llm_decision.get('bull_perspective', {}).get('stance', 'UNKNOWN')
             bear_stance = llm_decision.get('bear_perspective', {}).get('stance', 'UNKNOWN')
             bull_reasons = llm_decision.get('bull_perspective', {}).get('bullish_reasons', '')[:120]
             bear_reasons = llm_decision.get('bear_perspective', {}).get('bearish_reasons', '')[:120]
-            global_state.add_log(f"[🐂 BULL] [{bull_stance}] Conf={bull_conf}%")
-            global_state.add_log(f"[🐻 BEAR] [{bear_stance}] Conf={bear_conf}%")
+            global_state.add_log(f"[🐂 Long Case] [{bull_stance}] Conf={bull_conf}%")
+            global_state.add_log(f"[🐻 Short Case] [{bear_stance}] Conf={bear_conf}%")
             
             # LOG: LLM Decision Engine (generic, not tied to DeepSeek)
-            global_state.add_log(f"[⚖️ CRITIC] Action={vote_result.action.upper()} | Conf={llm_decision.get('confidence', 0)}%")
+            global_state.add_log(f"[⚖️ Final Decision] Action={vote_result.action.upper()} | Conf={llm_decision.get('confidence', 0)}%")
             
             # ✅ Decision Recording moved after Risk Audit for complete context
             # Saved to file still happens here for "raw" decision
@@ -1008,6 +1008,15 @@ class MultiAgentTradingBot:
                 
                 # ✅ Add Semantic Analysis for Dashboard
                 decision_dict['vote_analysis'] = SemanticConverter.convert_analysis_map(decision_dict.get('vote_details', {}))
+                
+                # 🆕 Add Four-Layer Status for Dashboard
+                decision_dict['four_layer_status'] = global_state.four_layer_result
+                
+                # 🆕 Add OI Fuel and KDJ Zone to vote_details for Dashboard
+                if 'vote_details' not in decision_dict:
+                    decision_dict['vote_details'] = {}
+                decision_dict['vote_details']['oi_fuel'] = quant_analysis.get('sentiment', {}).get('oi_fuel', {})
+                decision_dict['vote_details']['kdj_zone'] = global_state.four_layer_result.get('bb_position', 'unknown')
                 
                 # Update Market Context
                 if vote_result.regime:
@@ -1135,6 +1144,15 @@ class MultiAgentTradingBot:
             
             # ✅ Add Semantic Analysis for Dashboard
             decision_dict['vote_analysis'] = SemanticConverter.convert_analysis_map(decision_dict.get('vote_details', {}))
+            
+            # 🆕 Add Four-Layer Status for Dashboard
+            decision_dict['four_layer_status'] = global_state.four_layer_result
+            
+            # 🆕 Add OI Fuel and KDJ Zone to vote_details for Dashboard
+            if 'vote_details' not in decision_dict:
+                decision_dict['vote_details'] = {}
+            decision_dict['vote_details']['oi_fuel'] = quant_analysis.get('sentiment', {}).get('oi_fuel', {})
+            decision_dict['vote_details']['kdj_zone'] = global_state.four_layer_result.get('bb_position', 'unknown')
             
             # Update Market Context
             if vote_result.regime:
@@ -1789,42 +1807,42 @@ class MultiAgentTradingBot:
             anomalies = ', '.join(global_state.four_layer_result.get('data_anomalies', []))
             context += f"\n\n⚠️ **DATA ANOMALY**: {anomalies}"
 
-        context += "\n\n## 3. Multi-Agent Semantic Analysis (Deep Dive)\n"
+        context += "\n\n## 3. Detailed Market Analysis\n"
         
         # Extract analysis results
         trend_result = getattr(global_state, 'semantic_analyses', {}).get('trend', {})
         setup_result = getattr(global_state, 'semantic_analyses', {}).get('setup', {})
         trigger_result = getattr(global_state, 'semantic_analyses', {}).get('trigger', {})
         
-        # Trend Agent
+        # Trend Analysis (formerly TREND AGENT)
         if isinstance(trend_result, dict):
             trend_analysis = trend_result.get('analysis', 'Not available')
             trend_stance = trend_result.get('stance', 'UNKNOWN')
             trend_meta = trend_result.get('metadata', {})
-            trend_header = f"### 🔮 TREND AGENT [{trend_stance}] (Strength: {trend_meta.get('strength', 'N/A')}, ADX: {trend_meta.get('adx', 'N/A')})"
+            trend_header = f"### 🔮 Trend & Direction Analysis [{trend_stance}] (Strength: {trend_meta.get('strength', 'N/A')}, ADX: {trend_meta.get('adx', 'N/A')})"
         else:
             trend_analysis = trend_result if trend_result else 'Not available'
-            trend_header = "### 🔮 TREND AGENT"
+            trend_header = "🔮 Trend & Direction Analysis"
             
-        # Setup Agent
+        # Entry Zone Analysis (formerly SETUP AGENT)
         if isinstance(setup_result, dict):
             setup_analysis = setup_result.get('analysis', 'Not available')
             setup_stance = setup_result.get('stance', 'UNKNOWN')
             setup_meta = setup_result.get('metadata', {})
-            setup_header = f"### 📊 SETUP AGENT [{setup_stance}] (Zone: {setup_meta.get('zone', 'N/A')}, KDJ: {setup_meta.get('kdj_j', 'N/A')})"
+            setup_header = f"### 📊 Entry Zone Analysis [{setup_stance}] (Zone: {setup_meta.get('zone', 'N/A')}, KDJ: {setup_meta.get('kdj_j', 'N/A')})"
         else:
             setup_analysis = setup_result if setup_result else 'Not available'
-            setup_header = "### 📊 SETUP AGENT"
+            setup_header = "### 📊 Entry Zone Analysis"
 
-        # Trigger Agent
+        # Entry Timing Signal (formerly TRIGGER AGENT)
         if isinstance(trigger_result, dict):
             trigger_analysis = trigger_result.get('analysis', 'Not available')
             trigger_stance = trigger_result.get('stance', 'UNKNOWN')
             trigger_meta = trigger_result.get('metadata', {})
-            trigger_header = f"### ⚡ TRIGGER AGENT [{trigger_stance}] (Pattern: {trigger_meta.get('pattern', 'NONE')}, RVOL: {trigger_meta.get('rvol', 'N/A')}x)"
+            trigger_header = f"### ⚡ Entry Timing Signal [{trigger_stance}] (Pattern: {trigger_meta.get('pattern', 'NONE')}, RVOL: {trigger_meta.get('rvol', 'N/A')}x)"
         else:
             trigger_analysis = trigger_result if trigger_result else 'Not available'
-            trigger_header = "### ⚡ TRIGGER AGENT"
+            trigger_header = "### ⚡ Entry Timing Signal"
 
         context += f"\n{trend_header}\n{trend_analysis}\n"
         context += f"\n{setup_header}\n{setup_analysis}\n"

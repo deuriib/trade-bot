@@ -282,174 +282,119 @@ function renderDecisionTable(history, positions = []) {
         if (action.includes('LONG') || action.includes('BUY')) actionClass = 'action-buy';
         else if (action.includes('SHORT') || action.includes('SELL')) actionClass = 'action-sell';
 
+        // === NEW: Four-Layer Status ===
+        let layersHtml = '<span class="cell-na">-</span>';
+        if (d.four_layer_status) {
+            const l1 = d.four_layer_status.layer1_pass;
+            const l2 = d.four_layer_status.layer2_pass;
+            const l3 = d.four_layer_status.layer3_pass;
+            const l4 = d.four_layer_status.layer4_pass;
+            const blocking = d.four_layer_status.blocking_reason || '';
 
+            const icon = (pass) => pass === true ? '✅' : (pass === false ? '❌' : '⏳');
+            const allPass = l1 && l2 && l3 && l4;
+            const cls = allPass ? 'pos' : 'neg';
 
-        // Helper to format score cell with Semantic Support
-        const fmtScore = (key, label) => {
-            // Get Numeric Score
-            let scoreVal = 'N/A';
-            if (d.vote_details && d.vote_details[key] !== undefined && d.vote_details[key] !== null) {
-                scoreVal = Math.round(d.vote_details[key]);
-            }
-
-            // Check for semantic analysis first
-            if (d.vote_analysis && d.vote_analysis[key]) {
-                const text = d.vote_analysis[key];
-                let cls = 'neutral';
-                if (text.toLowerCase().includes('bull') || text.toLowerCase().includes('buy') || text.toLowerCase().includes('up')) cls = 'pos';
-                else if (text.toLowerCase().includes('bear') || text.toLowerCase().includes('sell') || text.toLowerCase().includes('down')) cls = 'neg';
-
-                // Truncate long text for display, tooltip for Score
-                const shortText = text.replace(/\(.*\)/, '').trim(); // Remove () parts for short display
-                return `<span class="val ${cls}" title="Score: ${scoreVal}" style="cursor:help; font-size: 0.8em;">${shortText}</span>`;
-            }
-
-            // Fallback to number if no semantic
-            if (scoreVal === 'N/A') return '<span class="cell-na">-</span>';
-            const val = parseInt(scoreVal);
-            const cls = val > 0 ? 'pos' : (val < 0 ? 'neg' : 'neutral');
-            return `<span class="val ${cls}">${val}</span>`;
-        };
-
-        // Helper to get directional icon and color
-        const getDirectionIcon = (score) => {
-            if (score > 30) return { icon: '📈', cls: 'pos', dir: 'UP' };
-            if (score < -30) return { icon: '📉', cls: 'neg', dir: 'DN' };
-            return { icon: '➖', cls: 'neutral', dir: 'NEU' };
-        };
-
-
-
-        // 1h Signal (Trend + Oscillator combined)
-        let signal1h = '<span class="cell-na" style="font-size:0.75em">-</span>';
-        if (d.vote_details) {
-            const tScore = d.vote_details.trend_1h || 0;
-            const oScore = d.vote_details.oscillator_1h || 0;
-            const tDir = getDirectionIcon(tScore);
-            const oDir = getDirectionIcon(oScore);
-            signal1h = `<div style="font-size:0.7em">
-                <span class="val ${tDir.cls}" title="Trend: ${Math.round(tScore)}">T:${tDir.dir}</span><br/>
-                <span class="val ${oDir.cls}" title="Osc: ${Math.round(oScore)}">O:${oDir.dir}</span>
-            </div>`;
+            layersHtml = `<span class="val ${cls}" title="L1:${icon(l1)} L2:${icon(l2)} L3:${icon(l3)} L4:${icon(l4)}\n${blocking}" style="font-size:0.75em;cursor:help">
+                ${icon(l1)}${icon(l2)}${icon(l3)}${icon(l4)}
+            </span>`;
         }
 
-        // 15m Signal
-        let signal15m = '<span class="cell-na" style="font-size:0.75em">-</span>';
-        if (d.vote_details) {
-            const tScore = d.vote_details.trend_15m || 0;
-            const oScore = d.vote_details.oscillator_15m || 0;
-            const tDir = getDirectionIcon(tScore);
-            const oDir = getDirectionIcon(oScore);
-            signal15m = `<div style="font-size:0.7em">
-                <span class="val ${tDir.cls}" title="Trend: ${Math.round(tScore)}">T:${tDir.dir}</span><br/>
-                <span class="val ${oDir.cls}" title="Osc: ${Math.round(oScore)}">O:${oDir.dir}</span>
-            </div>`;
+        // === NEW: ADX Value ===
+        let adxHtml = '<span class="cell-na">-</span>';
+        if (d.regime && d.regime.adx !== undefined) {
+            const adx = parseFloat(d.regime.adx).toFixed(0);
+            let cls = 'neutral';
+            let label = 'WEAK';
+            if (adx >= 25) { cls = 'pos'; label = 'TREND'; }
+            else if (adx < 20) { cls = 'neg'; label = 'CHOP'; }
+            adxHtml = `<span class="val ${cls}" title="ADX: ${adx}" style="font-size:0.8em">${adx}<br/>${label}</span>`;
         }
 
-        // 5m Signal
-        let signal5m = '<span class="cell-na" style="font-size:0.75em">-</span>';
-        if (d.vote_details) {
-            const tScore = d.vote_details.trend_5m || 0;
-            const oScore = d.vote_details.oscillator_5m || 0;
-            const tDir = getDirectionIcon(tScore);
-            const oDir = getDirectionIcon(oScore);
-            signal5m = `<div style="font-size:0.7em">
-                <span class="val ${tDir.cls}" title="Trend: ${Math.round(tScore)}">T:${tDir.dir}</span><br/>
-                <span class="val ${oDir.cls}" title="Osc: ${Math.round(oScore)}">O:${oDir.dir}</span>
-            </div>`;
-        }
-
-        // Sentiment with icon
-        let sentHtml = '<span class="cell-na">-</span>';
-        if (d.vote_details && d.vote_details.sentiment !== undefined) {
-            const score = Math.round(d.vote_details.sentiment);
-            const { icon, cls } = getDirectionIcon(score);
-            sentHtml = `<span class="val ${cls}" title="Sentiment Score: ${score}" style="font-size:0.8em">${icon}<br/>${score}</span>`;
-        }
-
-
-        // Reason (truncated with tooltip)
-        let reasonHtml = '<span class="cell-na">-</span>';
-        if (d.reason) {
-            const fullReason = d.reason.replace(/"/g, '&quot;'); // Escape quotes for HTML attribute
-            const shortReason = d.reason.length > 80 ? d.reason.substring(0, 80) + '...' : d.reason;
-            reasonHtml = `<span title="${fullReason}" style="font-size:0.8em;cursor:help;display:block;max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shortReason}</span>`;
-        }
-
-        // Position % (exact percentage)
-        let posPctHtml = '<span class="cell-na">-</span>';
-        if (d.position && d.position.position_pct !== undefined) {
-            const pct = d.position.position_pct.toFixed(1);
-            posPctHtml = `<span style="font-size:0.85em">${pct}%</span>`;
-        }
-
-        // Alignment status
-        let alignedHtml = '<span class="cell-na">-</span>';
-        if (d.multi_period_aligned !== undefined) {
-            alignedHtml = d.multi_period_aligned
-                ? '<span class="badge pos" title="Multi-period aligned">✅</span>'
-                : '<span class="badge neutral" title="Not aligned">➖</span>';
-        }
-
-        // Guardian
-        let guardHtml = '<span class="cell-na">-</span>';
-        if (d.guardian_passed !== undefined) {
-            if (d.guardian_passed) {
-                guardHtml = '<span class="badge pos" title="Passed">✅</span>';
+        // === NEW: OI Fuel ===
+        let oiHtml = '<span class="cell-na">-</span>';
+        if (d.vote_details && d.vote_details.oi_fuel) {
+            const oi = d.vote_details.oi_fuel;
+            if (oi.data_error) {
+                oiHtml = `<span class="val neg" title="OI Data Error: ${oi.anomaly_value}%" style="font-size:0.75em">⚠️ERR</span>`;
             } else {
-                const reason = (d.guardian_reason || 'Blocked').replace(/"/g, '&quot;');
-                guardHtml = `<span class="badge neg" title="${reason}" style="cursor: help;">⛔</span>`;
+                const change = oi.oi_change_24h !== null ? parseFloat(oi.oi_change_24h).toFixed(1) : '?';
+                const strength = oi.fuel_strength || 'unknown';
+                let cls = strength === 'strong' ? 'pos' : (strength === 'weak' ? 'neg' : 'neutral');
+                let icon = strength === 'strong' ? '🔥' : (strength === 'weak' ? '💨' : '➖');
+                oiHtml = `<span class="val ${cls}" title="OI: ${change}%, Fuel: ${strength}" style="font-size:0.8em">${icon}${change}%</span>`;
             }
+        } else if (d.vote_details && d.vote_details.sentiment !== undefined) {
+            // Fallback to sentiment
+            const score = Math.round(d.vote_details.sentiment);
+            const icon = score > 30 ? '📈' : (score < -30 ? '📉' : '➖');
+            const cls = score > 30 ? 'pos' : (score < -30 ? 'neg' : 'neutral');
+            oiHtml = `<span class="val ${cls}" title="Sentiment: ${score}" style="font-size:0.8em">${icon}${score}</span>`;
         }
 
-        // Render Regime with semantic icons
+        // Regime with semantic icons
         let regHtml = '<span class="cell-na">-</span>';
         if (d.regime && d.regime.regime) {
             let reg = (d.regime.regime || 'unknown').toLowerCase();
             let icon = '➖';
-            let text = 'UNKNOWN';
+            let text = 'UNK';
             let cls = 'neutral';
 
             if (reg.includes('up') || reg.includes('bull')) {
-                icon = '📈';
-                text = 'UP';
-                cls = 'pos';
+                icon = '📈'; text = 'UP'; cls = 'pos';
             } else if (reg.includes('down') || reg.includes('bear')) {
-                icon = '📉';
-                text = 'DOWN';
-                cls = 'neg';
+                icon = '📉'; text = 'DN'; cls = 'neg';
             } else if (reg.includes('chop') || reg.includes('sideways')) {
-                icon = '〰️';
-                text = 'CHOP';
-                cls = 'neutral';
+                icon = '〰️'; text = 'CHOP'; cls = 'neutral';
+            } else if (reg.includes('volatile') || reg.includes('directionless')) {
+                icon = '⚡'; text = 'VOL'; cls = 'warn';
             }
 
-            regHtml = `<span class="val ${cls}" title="${d.regime.regime}" style="font-size:0.8em">${icon}<br/>${text}</span>`;
+            regHtml = `<span class="val ${cls}" title="${d.regime.regime}\n${d.regime.reason || ''}" style="font-size:0.8em;cursor:help">${icon}${text}</span>`;
         }
 
-        // Render Position with semantic icons
+        // Position with semantic icons
         let posHtml = '<span class="cell-na">-</span>';
         if (d.position && d.position.location) {
             let pos = (d.position.location || 'unknown').toLowerCase();
             let icon = '➖';
-            let text = 'MID';
             let cls = 'neutral';
 
             if (pos.includes('high') || pos.includes('upper')) {
-                icon = '🔝';
-                text = 'HIGH';
-                cls = 'warn';
+                icon = '🔝'; cls = 'warn';
             } else if (pos.includes('low') || pos.includes('lower')) {
-                icon = '🔻';
-                text = 'LOW';
-                cls = 'pos';
-            } else {
-                icon = '➖';
-                text = 'MID';
+                icon = '🔻'; cls = 'pos';
             }
 
-            let posPctVal = (d.position.position_pct !== undefined) ? parseFloat(d.position.position_pct).toFixed(0) : '?';
-            posHtml = `<span class="val ${cls}" title="Exact: ${posPctVal}%" style="font-size:0.8em">${icon}<br/>${posPctVal}%</span>`;
+            let posPct = d.position.position_pct !== undefined ? parseFloat(d.position.position_pct).toFixed(0) : '?';
+            posHtml = `<span class="val ${cls}" title="${d.position.location}: ${posPct}%" style="font-size:0.8em">${icon}${posPct}%</span>`;
+        }
+
+        // === NEW: KDJ Zone ===
+        let zoneHtml = '<span class="cell-na">-</span>';
+        if (d.vote_details && d.vote_details.kdj_zone) {
+            const zone = d.vote_details.kdj_zone.toLowerCase();
+            let icon = '➖';
+            let text = 'MID';
+            let cls = 'neutral';
+            if (zone.includes('overbought') || zone.includes('high')) {
+                icon = '🔴'; text = 'OB'; cls = 'neg';
+            } else if (zone.includes('oversold') || zone.includes('low')) {
+                icon = '🟢'; text = 'OS'; cls = 'pos';
+            }
+            zoneHtml = `<span class="val ${cls}" title="KDJ Zone: ${zone}" style="font-size:0.8em">${icon}${text}</span>`;
+        }
+
+        // === NEW: Trigger Signal ===
+        let signalHtml = '<span class="cell-na">-</span>';
+        if (d.four_layer_status && d.four_layer_status.layer4_pass !== undefined) {
+            const pass = d.four_layer_status.layer4_pass;
+            const pattern = d.vote_details?.trigger_pattern || '';
+            if (pass) {
+                signalHtml = `<span class="val pos" title="Trigger: ${pattern || 'CONFIRMED'}" style="font-size:0.8em">✅GO</span>`;
+            } else {
+                signalHtml = `<span class="val neutral" title="Waiting for trigger" style="font-size:0.8em">⏳WAIT</span>`;
+            }
         }
 
         // Prophet P(Up) with icon
@@ -457,35 +402,11 @@ function renderDecisionTable(history, positions = []) {
         if (d.prophet_probability !== undefined && d.prophet_probability !== null) {
             const pUp = (d.prophet_probability * 100).toFixed(0);
             const cls = d.prophet_probability > 0.55 ? 'pos' : (d.prophet_probability < 0.45 ? 'neg' : 'neutral');
-            const icon = d.prophet_probability > 0.55 ? '🔮↗' : (d.prophet_probability < 0.45 ? '🔮↘' : '🔮➖');
-            prophetHtml = `<span class="val ${cls}" title="ML Prediction" style="font-size:0.8em">${icon}<br/>${pUp}%</span>`;
+            const icon = d.prophet_probability > 0.55 ? '↗' : (d.prophet_probability < 0.45 ? '↘' : '➖');
+            prophetHtml = `<span class="val ${cls}" title="ML Prediction" style="font-size:0.8em">🔮${icon}<br/>${pUp}%</span>`;
         }
 
-        // Risk with semantic icons
-        let riskHtml = '<span class="cell-na">-</span>';
-        if (d.risk_level) {
-            let icon = '⚠️';
-            let text = d.risk_level.toUpperCase();
-            let cls = 'neutral';
-
-            if (d.risk_level === 'safe') {
-                icon = '✅';
-                text = 'SAFE';
-                cls = 'pos';
-            } else if (d.risk_level === 'warning') {
-                icon = '⚠️';
-                text = 'WARN';
-                cls = 'warn';
-            } else if (d.risk_level === 'danger' || d.risk_level === 'fatal') {
-                icon = '🚨';
-                text = 'DANGER';
-                cls = 'neg';
-            }
-
-            riskHtml = `<span class="val ${cls}" style="font-size:0.8em">${icon}<br/>${text}</span>`;
-        }
-
-        // 🐂🐻 Bull/Bear Agent Confidence with Semantic Stance
+        // 🐂🐻 Bull/Bear Agent
         let bullHtml = '<span class="cell-na">-</span>';
         let bearHtml = '<span class="cell-na">-</span>';
         if (d.vote_details) {
@@ -493,29 +414,52 @@ function renderDecisionTable(history, positions = []) {
             const bearConf = d.vote_details.bear_confidence;
             const bullStance = d.vote_details.bull_stance || 'UNKNOWN';
             const bearStance = d.vote_details.bear_stance || 'UNKNOWN';
-            const bullReasons = d.vote_details.bull_reasons || '';
-            const bearReasons = d.vote_details.bear_reasons || '';
 
-            // Stance abbreviations
             const stanceAbbr = {
-                'STRONGLY_BULLISH': '🔥Bull',
-                'SLIGHTLY_BULLISH': '↗Bull',
-                'STRONGLY_BEARISH': '🔥Bear',
-                'SLIGHTLY_BEARISH': '↘Bear',
-                'NEUTRAL': '➖Neutral',
-                'UNCERTAIN': '❓Unclear',
+                'STRONGLY_BULLISH': '🔥',
+                'SLIGHTLY_BULLISH': '↗',
+                'STRONGLY_BEARISH': '🔥',
+                'SLIGHTLY_BEARISH': '↘',
+                'NEUTRAL': '➖',
+                'UNCERTAIN': '❓',
                 'UNKNOWN': '?'
             };
 
             if (bullConf !== undefined) {
                 const bullCls = bullConf > 60 ? 'pos' : (bullConf < 40 ? 'neg' : 'neutral');
-                const bullAbbr = stanceAbbr[bullStance] || bullStance;
-                bullHtml = `<span class="val ${bullCls}" title="${bullReasons}" style="font-size:0.8em">${bullAbbr}<br/>${bullConf}%</span>`;
+                const bullIcon = stanceAbbr[bullStance] || '?';
+                bullHtml = `<span class="val ${bullCls}" title="${bullStance}" style="font-size:0.8em">${bullIcon}${bullConf}%</span>`;
             }
             if (bearConf !== undefined) {
                 const bearCls = bearConf > 60 ? 'neg' : (bearConf < 40 ? 'pos' : 'neutral');
-                const bearAbbr = stanceAbbr[bearStance] || bearStance;
-                bearHtml = `<span class="val ${bearCls}" title="${bearReasons}" style="font-size:0.8em">${bearAbbr}<br/>${bearConf}%</span>`;
+                const bearIcon = stanceAbbr[bearStance] || '?';
+                bearHtml = `<span class="val ${bearCls}" title="${bearStance}" style="font-size:0.8em">${bearIcon}${bearConf}%</span>`;
+            }
+        }
+
+        // Reason (truncated with tooltip)
+        let reasonHtml = '<span class="cell-na">-</span>';
+        if (d.reason) {
+            const fullReason = d.reason.replace(/"/g, '&quot;');
+            const shortReason = d.reason.length > 60 ? d.reason.substring(0, 60) + '...' : d.reason;
+            reasonHtml = `<span title="${fullReason}" style="font-size:0.75em;cursor:help;display:block;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shortReason}</span>`;
+        }
+
+        // Guardian (merged with Risk + Aligned)
+        let guardHtml = '<span class="cell-na">-</span>';
+        if (d.guardian_passed !== undefined) {
+            const riskLevel = d.risk_level || 'unknown';
+            const aligned = d.multi_period_aligned;
+            const reason = (d.guardian_reason || '').replace(/"/g, '&quot;');
+
+            let riskIcon = '⚠️';
+            if (riskLevel === 'safe') riskIcon = '✅';
+            else if (riskLevel === 'danger' || riskLevel === 'fatal') riskIcon = '🚨';
+
+            if (d.guardian_passed) {
+                guardHtml = `<span class="badge pos" title="Risk: ${riskLevel}, Aligned: ${aligned ? 'Yes' : 'No'}" style="cursor:help">${riskIcon}PASS</span>`;
+            } else {
+                guardHtml = `<span class="badge neg" title="${reason}\nRisk: ${riskLevel}" style="cursor:help">⛔BLOCK</span>`;
             }
         }
 
@@ -524,25 +468,21 @@ function renderDecisionTable(history, positions = []) {
                 <td>${time}</td>
                 <td>${d.cycle_number || '-'}</td>
                 <td>${symbol}</td>
-                <td class="${actionClass}">${action}</td>
-                <td>${conf}</td>
-                <td>${reasonHtml}</td>
-
-                <td>${signal1h}</td>
-                <td>${signal15m}</td>
-                <td>${signal5m}</td>
-                <td>${sentHtml}</td>
+                <td>${layersHtml}</td>
+                <td>${adxHtml}</td>
+                <td>${oiHtml}</td>
                 <td>${regHtml}</td>
                 <td>${posHtml}</td>
+                <td>${zoneHtml}</td>
+                <td>${signalHtml}</td>
                 <td>${prophetHtml}</td>
                 <td>${bullHtml}</td>
                 <td>${bearHtml}</td>
-                <td>${riskHtml}</td>
+                <td class="${actionClass}">${action}</td>
+                <td>${conf}</td>
+                <td>${reasonHtml}</td>
                 <td>${guardHtml}</td>
-                <td>${alignedHtml}</td>
             </tr>
-
-
         `;
     }).join('');
 }
