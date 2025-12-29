@@ -304,8 +304,8 @@ class MultiAgentTradingBot:
                     try:
                         quote_vol = float(t['quoteVolume'])
                         ai_stats.append((t['symbol'], quote_vol))
-                    except:
-                        pass
+                    except (KeyError, ValueError, TypeError) as e:
+                        log.debug(f"Skipped {t.get('symbol', 'unknown')}: {e}")
             
             # Sort by Volume desc
             ai_stats.sort(key=lambda x: x[1], reverse=True)

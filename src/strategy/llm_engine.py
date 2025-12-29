@@ -5,12 +5,52 @@ LLM 策略推理引擎 (Multi-Provider Support)
 支持多种 LLM 提供商: OpenAI, DeepSeek, Claude, Qwen, Gemini
 """
 import json
+import re
 from typing import Dict, Optional
 from src.config import config
 from src.utils.logger import log
 from src.strategy.llm_parser import LLMOutputParser
 from src.strategy.decision_validator import DecisionValidator
 from src.llm import create_client, LLMConfig
+
+
+def _extract_json_robust(text: str) -> Optional[Dict]:
+    """
+    Robustly extract JSON from LLM response text.
+    
+    Tries multiple patterns to handle various LLM output formats:
+    1. Markdown code block with ```json
+    2. Raw JSON object
+    3. Nested JSON with proper brace matching
+    """
+    if not text:
+        return None
+    
+    # Pattern 1: Markdown code block
+    md_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+    if md_match:
+        try:
+            return json.loads(md_match.group(1))
+        except json.JSONDecodeError:
+            pass
+    
+    # Pattern 2: Find balanced JSON object
+    # Find first { and match to its closing }
+    start = text.find('{')
+    if start != -1:
+        depth = 0
+        for i, char in enumerate(text[start:], start):
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start:i+1])
+                    except json.JSONDecodeError:
+                        break
+    
+    return None
 
 
 class StrategyEngine:
@@ -230,11 +270,9 @@ Focus ONLY on bullish factors. Ignore bearish signals."""
             
             content = response.content
             
-            # Parse JSON from response
-            import re
-            json_match = re.search(r'\{[^}]+\}', content, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
+            # Parse JSON from response using robust extraction
+            result = _extract_json_robust(content)
+            if result:
                 stance = result.get('stance', 'UNKNOWN')
                 log.info(f"🐂 Bull Agent: [{stance}] {result.get('bullish_reasons', '')[:40]}... (Conf: {result.get('bull_confidence', 0)}%)")
                 return result
@@ -289,11 +327,9 @@ Focus ONLY on bearish factors. Ignore bullish signals."""
             
             content = response.content
             
-            # Parse JSON from response
-            import re
-            json_match = re.search(r'\{[^}]+\}', content, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
+            # Parse JSON from response using robust extraction
+            result = _extract_json_robust(content)
+            if result:
                 stance = result.get('stance', 'UNKNOWN')
                 log.info(f"🐻 Bear Agent: [{stance}] {result.get('bearish_reasons', '')[:40]}... (Conf: {result.get('bear_confidence', 0)}%)")
                 return result
