@@ -15,7 +15,7 @@
 ## 🌐 网页在线版 (优先推荐)
 
 **无需部署，直接通过网页端监控和管理您的机器人：**
-**[👉 立即访问在线仪表盘](https://web-production-169bb.up.railway.app/)**
+**[👉 立即访问在线仪表盘](https://llm-tradebot.up.railway.app/)**
 
 ---
 
@@ -113,7 +113,7 @@ cp config.example.yaml config.yaml
 python main.py --mode continuous
 ```
 
-启动后,请在浏览器访问: **<http://localhost:8000>** (或使用我们的 [云端在线版](https://web-production-169bb.up.railway.app/))
+启动后,请在浏览器访问: **<http://localhost:8000>** (或使用我们的 [云端在线版](https://llm-tradebot.up.railway.app/))
 
 > **默认密码**: `admin`
 

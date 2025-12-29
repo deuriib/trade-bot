@@ -16,7 +16,7 @@ Intelligent Multi-Agent Quantitative Trading Bot based on the **Adversarial Deci
 ## 🌐 Web App (Recommended)
 
 **Experience the bot immediately through our web interface:**
-**[👉 Live Dashboard](https://web-production-169bb.up.railway.app/)**
+**[👉 Live Dashboard](https://llm-tradebot.up.railway.app/)**
 
 ---
 
@@ -178,7 +178,7 @@ python main.py --mode continuous
 > - Sufficient USDT balance in Futures wallet
 > - API permissions: Read + Futures Trading enabled
 
-After startup, visit: **<http://localhost:8000>** (or use our [Cloud Hosting](https://web-production-169bb.up.railway.app/))
+After startup, visit: **<http://localhost:8000>** (or use our [Cloud Hosting](https://llm-tradebot.up.railway.app/))
 
 **Dashboard Features**:
 

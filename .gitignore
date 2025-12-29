@@ -98,3 +98,6 @@ CLEANUP_PREVIEW.md
 *.tmp
 *.temp
 tmp/
+
+# Development folders (not for production)
+nofx-dev/
