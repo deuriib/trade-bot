@@ -183,9 +183,10 @@ class MultiAgentTradingBot:
         # ✅ 初始化多账户管理器
         self.account_manager = AccountManager()
         self._init_accounts()
-        # Initialize mtime for .env tracking
+        # Initialize mtime for .env tracking (skip if not exists, e.g. Railway)
         self._env_mtime = 0
         self._env_path = os.path.join(os.path.dirname(__file__), '.env')
+        self._env_exists = os.path.exists(self._env_path)  # 🔧 Railway fix
         
         # 初始化共享 Agent (与币种无关)
         print("\n🚀 Initializing agents...")
@@ -2161,16 +2162,17 @@ class MultiAgentTradingBot:
         
         try:
             while global_state.is_running:
-                # 🔄 Check for configuration changes
-                try:
-                    current_mtime = os.path.getmtime(self._env_path)
-                    if current_mtime > self._env_mtime:
-                        if self._env_mtime > 0: # Avoid reload on first pass as it's already loaded
-                            log.info("📝 .env file change detected, reloading symbols...")
-                            self._reload_symbols()
-                        self._env_mtime = current_mtime
-                except Exception as e:
-                    log.error(f"Error checking .env mtime: {e}")
+                # 🔄 Check for configuration changes (skip if .env doesn't exist, e.g. Railway)
+                if self._env_exists:
+                    try:
+                        current_mtime = os.path.getmtime(self._env_path)
+                        if current_mtime > self._env_mtime:
+                            if self._env_mtime > 0: # Avoid reload on first pass as it's already loaded
+                                log.info("📝 .env file change detected, reloading symbols...")
+                                self._reload_symbols()
+                            self._env_mtime = current_mtime
+                    except Exception as e:
+                        log.warning(f"Error checking .env mtime: {e}")
 
                 # Check stop state FIRST - must break before continue
                 if global_state.execution_mode == 'Stopped':
