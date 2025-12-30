@@ -163,6 +163,7 @@ function updateDashboard() {
             // 🆕 Update K-Line symbol selector with active trading symbols
             if (data.system && data.system.symbols) {
                 updateSymbolSelector(data.system.symbols);
+                updateDecisionFilter(data.system.symbols);  // 🆕 Also update decision filter
             }
 
             // New Renderers
@@ -811,6 +812,35 @@ function updateSymbolSelector(symbols) {
         if (typeof loadTradingViewChart === 'function') {
             loadTradingViewChart(symbols[0]);
         }
+    }
+}
+
+// 🆕 Update Decision Filter Symbol Selector dynamically
+function updateDecisionFilter(symbols) {
+    const filterSelector = document.getElementById('filter-symbol');
+    if (!filterSelector || !symbols || symbols.length === 0) return;
+
+    // Get current selection
+    const currentFilter = filterSelector.value;
+
+    // Build new options (always keep "All Symbols" as first option)
+    const options = ['<option value="all">All Symbols</option>'];
+
+    symbols.forEach(symbol => {
+        // Format display name (e.g., BTCUSDT -> BTC)
+        const displayName = symbol.replace('USDT', '');
+        options.push(`<option value="${symbol}">${displayName}</option>`);
+    });
+
+    // Update selector
+    filterSelector.innerHTML = options.join('');
+
+    // Restore previous selection if it still exists
+    if (currentFilter === 'all' || symbols.includes(currentFilter)) {
+        filterSelector.value = currentFilter;
+    } else {
+        // Default to "all"
+        filterSelector.value = 'all';
     }
 }
 
