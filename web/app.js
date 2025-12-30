@@ -160,6 +160,11 @@ function updateDashboard() {
             renderDecision(data.decision);
             renderLogs(data.logs);
 
+            // 🆕 Update K-Line symbol selector with active trading symbols
+            if (data.system && data.system.symbols) {
+                updateSymbolSelector(data.system.symbols);
+            }
+
             // New Renderers
             // Account & Positions Logic
             let activeAccount = data.account;
@@ -774,6 +779,39 @@ function renderDecision(decision) {
     // But we might want to highlight latest row if needed.
     // For now, do nothing or update if we kept the card.
     // Since we removed #decision-box from HTML, this function can share empty logic or be removed.
+}
+
+// 🆕 Update K-Line Symbol Selector dynamically
+function updateSymbolSelector(symbols) {
+    const selector = document.getElementById('symbol-selector');
+    if (!selector || !symbols || symbols.length === 0) return;
+
+    // Get current selection
+    const currentSymbol = selector.value;
+
+    // Store symbols globally for reference
+    window.activeSymbols = symbols;
+
+    // Build new options
+    const options = symbols.map(symbol => {
+        // Format display name (e.g., BTCUSDT -> BTC/USDT)
+        const displayName = symbol.replace('USDT', '/USDT');
+        return `<option value="${symbol}">${displayName}</option>`;
+    }).join('');
+
+    // Update selector
+    selector.innerHTML = options;
+
+    // Restore previous selection if it still exists
+    if (symbols.includes(currentSymbol)) {
+        selector.value = currentSymbol;
+    } else {
+        // Default to first symbol and reload chart
+        selector.value = symbols[0];
+        if (typeof loadTradingViewChart === 'function') {
+            loadTradingViewChart(symbols[0]);
+        }
+    }
 }
 
 function renderLogs(logs) {

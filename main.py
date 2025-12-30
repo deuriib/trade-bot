@@ -172,6 +172,7 @@ class MultiAgentTradingBot:
         self.current_symbol = self.primary_symbol  # 当前处理的交易对
         self.test_mode = test_mode
         global_state.is_test_mode = test_mode  # Set test mode in global state
+        global_state.symbols = self.symbols  # 🆕 Sync symbols to global state for API
         
         # 交易参数
         self.max_position_size = max_position_size
