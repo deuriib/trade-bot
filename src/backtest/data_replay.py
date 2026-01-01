@@ -137,16 +137,25 @@ class DataReplayAgent:
     
     async def _fetch_from_api(self):
         """从 Binance API 获取历史数据"""
-        # 计算需要的 K 线数量
-        # Use the original end_date for calculation, not the extended one
-        days = (self.end_date - timedelta(days=1) - self.start_date).days + 1
+        # CRITICAL FIX: Need historical data BEFORE backtest period for technical indicators
+        # Add lookback period (default 30 days) before start_date
+        lookback_days = 30
+        extended_start = self.start_date - timedelta(days=lookback_days)
         
+        # Calculate total days including lookback
+        total_days = (self.end_date - extended_start).days + 1
+        
+        # Calculate required candles
         # 5m K线：每天 288 根
-        limit_5m = days * 288
+        limit_5m = total_days * 288
         # 15m K线：每天 96 根
-        limit_15m = days * 96
+        limit_15m = total_days * 96
         # 1h K线：每天 24 根
-        limit_1h = days * 24
+        limit_1h = total_days * 24
+        
+        log.info(f"📊 Fetching data from {extended_start.date()} to {self.end_date.date()}")
+        log.info(f"   Lookback: {lookback_days} days before backtest start")
+        log.info(f"   Expected: 5m={limit_5m}, 15m={limit_15m}, 1h={limit_1h} candles")
         
         # Binance API 限制单次最多 1500 根，需要分批获取
         df_5m = await self._fetch_klines_batched("5m", limit_5m)
@@ -156,10 +165,12 @@ class DataReplayAgent:
         # 获取资金费率历史
         funding_rates = await self._fetch_funding_rates()
         
-        # 过滤日期范围
-        df_5m = self._filter_date_range(df_5m)
-        df_15m = self._filter_date_range(df_15m)
-        df_1h = self._filter_date_range(df_1h)
+        # IMPORTANT: Do NOT filter out historical data before start_date
+        # We need it for technical indicator calculation
+        # Only filter data AFTER end_date
+        df_5m = df_5m[df_5m.index <= self.end_date]
+        df_15m = df_15m[df_15m.index <= self.end_date]
+        df_1h = df_1h[df_1h.index <= self.end_date]
         
         # 创建缓存对象
         self.data_cache = DataCache(
@@ -172,13 +183,16 @@ class DataReplayAgent:
             funding_rates=funding_rates
         )
         
-        # 生成时间戳列表（基于 5m K线）
-        self.timestamps = df_5m.index.tolist()
         
-        log.info(f"   5m: {len(df_5m)} candles")
+        # Generate timestamp list (based on 5m K-lines)
+        # IMPORTANT: Only include timestamps within backtest period, not historical lookback
+        all_timestamps = df_5m.index.tolist()
+        self.timestamps = [ts for ts in all_timestamps if self.start_date <= ts <= self.end_date]
+        
+        log.info(f"   5m: {len(df_5m)} candles (including lookback)")
         log.info(f"   15m: {len(df_15m)} candles")
         log.info(f"   1h: {len(df_1h)} candles")
-        log.info(f"   Funding rates: {len(funding_rates)} records")
+        log.info(f"   Backtest timestamps: {len(self.timestamps)}")
     
     async def _fetch_funding_rates(self) -> List[FundingRateRecord]:
         """获取资金费率历史数据"""

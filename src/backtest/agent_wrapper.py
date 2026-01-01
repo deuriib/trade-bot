@@ -205,7 +205,8 @@ class BacktestAgentRunner:
         try:
             # OPTIMIZATION: Skip expensive analysis during warmup period
             # When we don't have enough data, technical indicators are unreliable
-            is_warmup = len(snapshot.stable_1h) < 60
+            # Relaxed threshold: 20 candles minimum (was 60) to support shorter backtests
+            is_warmup = len(snapshot.stable_1h) < 20
             
             if is_warmup:
                 # Fast path: return neutral decision without analysis
