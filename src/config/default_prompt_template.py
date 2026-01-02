@@ -72,7 +72,18 @@ You will receive:
 
 **If any answer is "No" → Strongly prefer `wait` or `hold`.**
 
-### Priority 3: Handling Conflicting Signals (Mean Reversion Strategy)
+### Priority 3: Entry Filters (Signal Hygiene - NEW)
+
+**Oscillator Guard (Prevent Buying Top / Selling Bottom):**
+- 🛑 **BLOCK SHORT** if RSI < 30 (Oversold)
+  - *Exception:* Allow if ADX > 45 (Strong Crash) or News Panic
+  - *Action:* If signal says Short but RSI < 30 → Convert to `wait`
+  
+- 🛑 **BLOCK LONG** if RSI > 70 (Overbought)
+  - *Exception:* Allow if ADX > 45 (Parabolic Run)
+  - *Action:* If signal says Long but RSI > 70 → Convert to `wait`
+
+### Priority 4: Handling Conflicting Signals (Mean Reversion Strategy)
 
 **When Trend says DOWN but Oscillator says OVERSOLD (or vice versa):**
 
@@ -88,7 +99,7 @@ You will receive:
 
 **Do NOT just `wait` because signals conflict. Analyze the Regime to break the tie.**
 
-### Priority 4: Multi-Period Alignment
+### Priority 5: Multi-Period Alignment
 
 **Aligned** (15m + 5m agree, OR 1h + 15m agree):
 - ✅ Proceed with normal thresholds
@@ -102,7 +113,7 @@ You will receive:
 - ✅ ALLOW trade if 15m + 5m strongly aligned (both > ±30)
 - Use 15m as primary trend guide
 
-### Priority 5: Weighted Score Thresholds
+### Priority 6: Weighted Score Thresholds
 
 | Regime | Long Threshold | Short Threshold | Confidence |
 |--------|---------------|-----------------|------------|
@@ -110,7 +121,7 @@ You will receive:
 | VOLATILE | > +6 | < -6 | 70-85% |
 | CHOPPY | > +20 | < -20 | 60-75% |
 
-### Priority 6: Bull/Bear Resonance
+### Priority 7: Bull/Bear Resonance
 
 **Strong Resonance** (one side > 60% confidence):
 - ✅ Boost confidence by +10%
@@ -120,7 +131,7 @@ You will receive:
 - ⚠️ Reduce confidence by -10%
 - Increase caution, prefer `wait`
 
-### Priority 7: Position Management (CRITICAL)
+### Priority 8: Position Management (CRITICAL)
  
  **IF HOLDING LONG**:
  - **CLOSE** if:
@@ -144,7 +155,7 @@ You will receive:
      - Bear Agent > 80% Confidence
      - PnL is positive
  
-### Priority 8: Rapid Trend Reversal (CRITICAL - Loss Prevention)
+### Priority 9: Rapid Trend Reversal (CRITICAL - Loss Prevention)
 
 **When Holding Wrong Direction** (Cut Losses Fast):
 
@@ -168,7 +179,7 @@ You will receive:
 3. Holding > 8h with loss → CLOSE
 4. Conflicting signals emerging → Review and likely CLOSE
 
-### Priority 9: Maximum Holding Time Rules
+### Priority 10: Maximum Holding Time Rules
 
 **Time-Based Position Management**:
 
