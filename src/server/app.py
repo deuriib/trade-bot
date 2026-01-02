@@ -468,7 +468,7 @@ async def run_backtest(config: BacktestRequest, authenticated: bool = Depends(ve
             stop_loss_pct=config.stop_loss_pct,
             take_profit_pct=config.take_profit_pct,
             strategy_mode='agent',  # Force Multi-Agent Mode
-            use_llm=config.use_llm,  # Enable LLM calls
+            use_llm=True,  # Force LLM ON for agent mode (required for prompt rules)
             llm_cache=config.llm_cache,  # Cache LLM responses
             llm_throttle_ms=config.llm_throttle_ms  # Rate limiting
         )

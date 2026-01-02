@@ -303,15 +303,21 @@ class BacktestEngine:
                     profit = current_equity - self.config.initial_capital
                     profit_pct = (profit / self.config.initial_capital) * 100
                     
-                    # 获取最新的净值曲线点
-                    latest_equity_point = None
-                    if self.portfolio.equity_curve:
-                        point = self.portfolio.equity_curve[-1]
-                        latest_equity_point = {
-                            'timestamp': point.timestamp.isoformat(),
-                            'total_equity': float(point.total_equity),
-                            'drawdown_pct': float(point.drawdown_pct)
-                        }
+                    # Calculate fresh equity point for real-time display (not from stale curve)
+                    # Update peak for drawdown calculation
+                    if current_equity > self.portfolio.peak_equity:
+                        peak_equity = current_equity
+                    else:
+                        peak_equity = self.portfolio.peak_equity
+                    
+                    drawdown = peak_equity - current_equity
+                    drawdown_pct = drawdown / peak_equity * 100 if peak_equity > 0 else 0
+                    
+                    latest_equity_point = {
+                        'timestamp': timestamp.isoformat(),
+                        'total_equity': float(current_equity),
+                        'drawdown_pct': float(drawdown_pct)
+                    }
                     
                     # 获取最新交易（最近1笔）
                     latest_trade = None
@@ -339,7 +345,7 @@ class BacktestEngine:
                         'profit': profit,
                         'profit_pct': profit_pct,
                         'timestamp': timestamp.isoformat() if hasattr(timestamp, 'isoformat') else str(timestamp),
-                        'latest_equity_point': latest_equity_point,
+                        'equity_point': latest_equity_point,
                         'latest_trade': latest_trade,
                         'metrics': {
                             'total_trades': trades_count,
