@@ -60,6 +60,7 @@ class VoteResult:
     reason: str  # 决策原因
     regime: Optional[Dict] = None      # 市场状态信息
     position: Optional[Dict] = None    # 价格位置信息
+    trade_params: Optional[Dict] = None # 动态交易参数 (stop_loss, take_profit, leverage, etc.)
 
 
 class DecisionCoreAgent:

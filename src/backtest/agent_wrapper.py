@@ -267,7 +267,8 @@ class BacktestAgentRunner:
                 'reason': final_decision.reason,
                 'vote_details': getattr(final_decision, 'vote_details', {}),
                 'weighted_score': getattr(final_decision, 'weighted_score', 0),
-                'llm_enhanced': self.llm_engine is not None
+                'llm_enhanced': self.llm_engine is not None,
+                'trade_params': getattr(final_decision, 'trade_params', None)
             }
             
         except Exception as e:
@@ -314,7 +315,13 @@ class BacktestAgentRunner:
                 reason=llm_result_dict.get('reasoning', 'LLM decision'),
                 weighted_score=llm_result_dict.get('weighted_score', 0),
                 vote_details={},
-                multi_period_aligned=False
+                multi_period_aligned=False,
+                trade_params={
+                    'stop_loss_pct': llm_result_dict.get('stop_loss_pct'),
+                    'take_profit_pct': llm_result_dict.get('take_profit_pct'),
+                    'leverage': llm_result_dict.get('leverage'),
+                    'position_size_pct': llm_result_dict.get('position_size_pct')
+                }
             )
             
             # Save LLM log for backtest

@@ -452,11 +452,40 @@ class BacktestEngine:
             # 开仓
             side = Side.LONG if action == 'long' else Side.SHORT
             
-            # 计算数量
-            position_size = min(
-                self.config.max_position_size * self.config.leverage,
-                self.portfolio.cash * 0.95  # 留 5% 作为缓冲
-            )
+            # 动态交易参数解析
+            params = decision.get('trade_params') or {}
+            
+            # 1. 动态杠杆 (优先使用LLM建议，否则使用配置)
+            leverage = params.get('leverage') or self.config.leverage
+            
+            # 2. 动态止盈止损
+            sl_pct = params.get('stop_loss_pct') or self.config.stop_loss_pct
+            tp_pct = params.get('take_profit_pct') or self.config.take_profit_pct
+            
+            # 3. 动态仓位管理
+            # 如果LLM提供了 position_size_pct (资金占比)，则根据可用余额计算
+            available_cash = self.portfolio.cash
+            
+            if params.get('position_size_pct', 0) > 0:
+                # LLM 指定了资金占比 (例如 20%)
+                use_cash = available_cash * (params['position_size_pct'] / 100)
+                # 仓位价值 = 投入资金 * 杠杆
+                # 限制最大仓位不能超过配置的 max_position_size * leverage
+                target_position_value = use_cash * leverage
+                
+                # 双重保险：不超过现金的98% (留点缓冲) 和 配置上限
+                position_size = min(
+                    target_position_value,
+                    available_cash * 0.98 * leverage,
+                    self.config.max_position_size * leverage
+                )
+            else:
+                # 默认逻辑: 使用配置的固定最大仓位
+                position_size = min(
+                    self.config.max_position_size * self.config.leverage,
+                    available_cash * 0.95
+                )
+            
             quantity = position_size / current_price
             
             if quantity > 0:
@@ -466,8 +495,8 @@ class BacktestEngine:
                     quantity=quantity,
                     price=current_price,
                     timestamp=timestamp,
-                    stop_loss_pct=self.config.stop_loss_pct,
-                    take_profit_pct=self.config.take_profit_pct
+                    stop_loss_pct=sl_pct,
+                    take_profit_pct=tp_pct
                 )
         
         elif action == 'close' and has_position:
