@@ -186,7 +186,7 @@ async def get_status(authenticated: bool = Depends(verify_auth)):
         "decision": global_state.latest_decision,
         "decision_history": global_state.decision_history[:10],
         "trade_history": global_state.trade_history[:20],
-        "logs": global_state.recent_logs[:50]
+        "logs": global_state.recent_logs[-50:]  # Return latest 50 logs (reversed: newest at end)
     }
     return clean_nans(data)
 
