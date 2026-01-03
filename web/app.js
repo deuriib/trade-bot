@@ -193,7 +193,10 @@ window.logout = function () {
 
     if (confirm('Are you sure you want to logout?')) {
         apiFetch('/api/logout', { method: 'POST' })
-            .then(() => window.location.href = '/login')
+            .then(() => {
+                localStorage.removeItem('user_role');  // Clear role on logout
+                window.location.href = '/login';
+            })
             .catch(err => console.error(err));
     }
 };
@@ -202,7 +205,8 @@ function updateDashboard() {
     apiFetch(API_URL)
         .then(response => {
             if (response.status === 401 || response.status === 403) {
-                // Session expired or unauthorized
+                // Session expired or unauthorized - clear stale role
+                localStorage.removeItem('user_role');
                 window.location.href = '/login';
                 throw new Error("Unauthorized");
             }

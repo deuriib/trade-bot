@@ -313,6 +313,11 @@
                 });
 
                 if (response.ok) {
+                    const data = await response.json();
+                    // CRITICAL: Store role in localStorage for verifyRole() permission checks
+                    localStorage.setItem('user_role', data.role);
+                    console.log('✅ Logged in as:', data.role);
+                    
                     btnText.textContent = '✓ Success! Redirecting...';
                     setTimeout(() => {
                         window.location.href = '/';
