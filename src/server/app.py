@@ -37,7 +37,10 @@ WEB_DIR = os.path.join(BASE_DIR, 'web')
 
 # Authentication Configuration
 WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "EthanAlgoX")  # Admin password
-DEPLOYMENT_MODE = os.environ.get("DEPLOYMENT_MODE", "local")
+
+# Auto-detect production environment (Railway sets RAILWAY_* env vars and PORT)
+IS_RAILWAY = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
+IS_PRODUCTION = IS_RAILWAY or os.environ.get("DEPLOYMENT_MODE", "local") != "local"
 
 SESSION_COOKIE_NAME = "tradebot_session"
 # Session store: {session_id: role} where role is 'admin' or 'user'
@@ -73,7 +76,7 @@ def clean_nans(obj):
 @app.get("/api/info")
 async def get_system_info():
     return {
-        "deployment_mode": DEPLOYMENT_MODE,
+        "deployment_mode": "railway" if IS_RAILWAY else ("production" if IS_PRODUCTION else "local"),
         "requires_auth": True
     }
 
@@ -95,14 +98,13 @@ async def login(response: Response, data: LoginRequest):
         VALID_SESSIONS[session_id] = role
         
         # Cookie settings for both local (HTTP) and Railway (HTTPS) deployment
-        is_production = DEPLOYMENT_MODE != "local"
         response.set_cookie(
             key=SESSION_COOKIE_NAME, 
             value=session_id, 
             httponly=True, 
             max_age=86400 * 7,  # 7 days
-            samesite="none" if is_production else "lax",  # "none" required for cross-site HTTPS
-            secure=is_production  # Must be True for HTTPS (Railway)
+            samesite="none" if IS_PRODUCTION else "lax",  # "none" required for cross-site HTTPS
+            secure=IS_PRODUCTION  # Must be True for HTTPS (Railway)
         )
         return {"status": "success", "role": role}
     else:
