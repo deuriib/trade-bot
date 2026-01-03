@@ -435,13 +435,18 @@ class MultiAgentTradingBot:
                         entry_price = v_pos['entry_price']
                         qty = v_pos['quantity']
                         side = v_pos['side']
+                        leverage = v_pos.get('leverage', 1)
                         
                         if side == 'LONG':
                             unrealized_pnl = (current_price_5m - entry_price) * qty
                         else:
                             unrealized_pnl = (entry_price - current_price_5m) * qty
                         
-                        pnl_pct = (unrealized_pnl / (entry_price * qty)) * 100 if entry_price > 0 else 0
+                        # 统一使用 ROE (Return on Equity) 计算方式
+                        # ROE% = (unrealized_pnl / margin) * 100
+                        # 其中 margin = (entry_price * qty) / leverage
+                        margin = (entry_price * qty) / leverage if leverage > 0 else entry_price * qty
+                        pnl_pct = (unrealized_pnl / margin) * 100 if margin > 0 else 0
                         
                         # Store in position_info
                         current_position_info = {
@@ -450,8 +455,8 @@ class MultiAgentTradingBot:
                             'quantity': qty,
                             'entry_price': entry_price,
                             'unrealized_pnl': unrealized_pnl,
-                            'pnl_pct': pnl_pct,
-                            'leverage': v_pos.get('leverage', 1),
+                            'pnl_pct': pnl_pct,  # ROE 百分比
+                            'leverage': leverage,
                             'is_test': True
                         }
                         
@@ -459,7 +464,7 @@ class MultiAgentTradingBot:
                         v_pos['unrealized_pnl'] = unrealized_pnl
                         v_pos['pnl_pct'] = pnl_pct
                         v_pos['current_price'] = current_price_5m
-                        log.info(f"💰 [Virtual Position] {side} {self.current_symbol} PnL: ${unrealized_pnl:.2f} ({pnl_pct:+.2f}%)")
+                        log.info(f"💰 [Virtual Position] {side} {self.current_symbol} PnL: ${unrealized_pnl:.2f} (ROE: {pnl_pct:+.2f}%)")
                         
                 else:
                     # Live Mode
@@ -474,8 +479,11 @@ class MultiAgentTradingBot:
                             entry_price = float(raw_pos.get('entryPrice', 0))
                             unrealized_pnl = float(raw_pos.get('unRealizedProfit', 0))
                             qty = abs(amt)
+                            leverage = int(raw_pos.get('leverage', 1))
                             
-                            pnl_pct = (unrealized_pnl / (entry_price * qty / int(raw_pos.get('leverage', 1)))) * 100 # Approx ROE
+                            # 统一使用 ROE (Return on Equity) 计算方式 - 与测试模式一致
+                            margin = (entry_price * qty) / leverage if leverage > 0 else entry_price * qty
+                            pnl_pct = (unrealized_pnl / margin) * 100 if margin > 0 else 0
                             
                             current_position_info = {
                                 'symbol': self.current_symbol,
@@ -483,11 +491,11 @@ class MultiAgentTradingBot:
                                 'quantity': qty,
                                 'entry_price': entry_price,
                                 'unrealized_pnl': unrealized_pnl,
-                                'pnl_pct': pnl_pct, # Note: this might be rough calc
-                                'leverage': int(raw_pos.get('leverage', 1)),
+                                'pnl_pct': pnl_pct,  # ROE 百分比
+                                'leverage': leverage,
                                 'is_test': False
                             }
-                            log.info(f"💰 [Real Position] {side} {self.current_symbol} Amt:{amt} PnL:${unrealized_pnl:.2f}")
+                            log.info(f"💰 [Real Position] {side} {self.current_symbol} Amt:{amt} PnL:${unrealized_pnl:.2f} (ROE: {pnl_pct:+.2f}%)")
                     except Exception as e:
                         log.error(f"Failed to fetch real position: {e}")
 
@@ -1126,16 +1134,8 @@ class MultiAgentTradingBot:
                 regime_txt = vote_result.regime.get('regime', 'Unknown') if vote_result.regime else 'Unknown'
                 pos_txt = f"{min(max(vote_result.position.get('position_pct', 0), 0), 100):.0f}%" if vote_result.position else 'N/A'
                 
-                # GlobalState Logging of Logic
-                regime_txt = vote_result.regime.get('regime', 'Unknown') if vote_result.regime else 'Unknown'
-                pos_txt = f"{min(max(vote_result.position.get('position_pct', 0), 0), 100):.0f}%" if vote_result.position else 'N/A'
-                
                 # LOG 3: Critic (Wait Case)
                 global_state.add_log(f"⚖️ DecisionCoreAgent (The Critic): Context(Regime={regime_txt}, Pos={pos_txt}) => Vote: WAIT ({vote_result.reason})")
-                # Check if there's an active position
-                # For now, we assume no position in test mode (can be enhanced with real position check)
-                actual_action = 'wait'  # No position → wait (观望)
-                # If we had a position, it would be 'hold' (持有)
                 
                 # Check if there's an active position
                 # For now, we assume no position in test mode (can be enhanced with real position check)
@@ -1276,12 +1276,16 @@ class MultiAgentTradingBot:
 
             current_position = self._get_current_position()
             
+            # 提取 ATR 百分比用于动态止损计算
+            atr_pct = regime_result.get('atr_pct', None) if regime_result else None
+            
             # 执行审计
             audit_result = await self.risk_audit.audit_decision(
                 decision=order_params,
                 current_position=current_position,
                 account_balance=account_balance,
-                current_price=current_price
+                current_price=current_price,
+                atr_pct=atr_pct  # 传递 ATR 用于动态止损计算
             )
             
             # Update Dashboard Guardian Status
@@ -1390,10 +1394,6 @@ class MultiAgentTradingBot:
                     'current_price': current_price
                 }
             # Step 5: 执行引擎
-            if self.test_mode:
-                print("\n[Step 5/5] 🧪 TestMode - 模拟执行...")
-                print(f"  模拟订单: {order_params['action']} {order_params['quantity']} @ {current_price}")
-                
             if self.test_mode:
                 print("\n[Step 5/5] 🧪 TestMode - 模拟执行...")
                 print(f"  模拟订单: {order_params['action']} {order_params['quantity']} @ {current_price}")

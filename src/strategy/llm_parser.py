@@ -144,7 +144,7 @@ class LLMOutputParser:
         """
         从文本中提取 JSON 对象或数组
         
-        优先提取数组格式 [{...}]
+        使用括号计数算法正确处理嵌套结构
         
         Args:
             text: 原始文本
@@ -152,17 +152,82 @@ class LLMOutputParser:
         Returns:
             JSON 字符串，如果未找到返回 None
         """
-        # 优先尝试匹配 JSON 数组 [{...}]
+        # 方法1: 使用括号计数提取完整 JSON 数组 [{...}]
+        json_str = self._extract_balanced_json(text, '[', ']')
+        if json_str:
+            return json_str
+        
+        # 方法2: 使用括号计数提取 JSON 对象 {...}
+        json_str = self._extract_balanced_json(text, '{', '}')
+        if json_str:
+            return json_str
+        
+        # 方法3: 回退到原有正则匹配 (简单场景)
         arr_match = re.search(r'\[\s*\{.*?\}\s*\]', text, re.DOTALL)
         if arr_match:
             return arr_match.group(0)
         
-        # 尝试匹配 JSON 对象 {...}
         obj_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
         if obj_match:
             return obj_match.group(0)
         
         return None
+    
+    def _extract_balanced_json(self, text: str, open_char: str, close_char: str) -> Optional[str]:
+        """
+        使用括号计数提取平衡的 JSON 结构
+        
+        Args:
+            text: 原始文本
+            open_char: 开始字符 ('{' 或 '[')
+            close_char: 结束字符 ('}' 或 ']')
+            
+        Returns:
+            完整的 JSON 字符串，如果未找到返回 None
+        """
+        start_idx = text.find(open_char)
+        if start_idx == -1:
+            return None
+        
+        count = 0
+        in_string = False
+        escape_next = False
+        
+        for i, char in enumerate(text[start_idx:], start_idx):
+            # 处理字符串内部转义
+            if escape_next:
+                escape_next = False
+                continue
+            
+            if char == '\\' and in_string:
+                escape_next = True
+                continue
+            
+            # 处理字符串边界
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            
+            # 只在字符串外部计数括号
+            if not in_string:
+                if char == open_char:
+                    count += 1
+                elif char == close_char:
+                    count -= 1
+                    
+                    if count == 0:
+                        # 找到完整的 JSON 结构
+                        json_str = text[start_idx:i + 1]
+                        # 验证是否可解析
+                        try:
+                            json.loads(json_str)
+                            return json_str
+                        except json.JSONDecodeError:
+                            # 继续寻找下一个可能的 JSON
+                            return None
+        
+        return None
+
     
     def _parse_json_with_fallback(self, json_str: str) -> Dict:
         """

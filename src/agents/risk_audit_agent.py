@@ -103,7 +103,8 @@ class RiskAuditAgent:
         decision: Dict,
         current_position: Optional[PositionInfo],
         account_balance: float,
-        current_price: float
+        current_price: float,
+        atr_pct: float = None  # 新增: ATR 百分比用于动态止损计算
     ) -> RiskCheckResult:
         """
         对决策进行风控审计（主入口）
@@ -122,6 +123,8 @@ class RiskAuditAgent:
             current_position: 当前持仓信息（None表示无仓位）
             account_balance: 账户可用余额（USDT）
             current_price: 当前市场价格
+            atr_pct: ATR 百分比 (例如 2.5 表示 2.5%);
+                     用于动态计算止损距离，如果未提供则使用默认 2%
             
         Returns:
             RiskCheckResult对象
@@ -204,7 +207,8 @@ class RiskAuditAgent:
                 action=action,
                 entry_price=decision.get('entry_price', current_price),
                 stop_loss=decision.get('stop_loss'),
-                current_price=current_price
+                current_price=current_price,
+                atr_pct=atr_pct  # 传递 ATR 用于动态计算
             )
             
             if not stop_loss_check['passed']:
@@ -338,14 +342,19 @@ class RiskAuditAgent:
         action: str,
         entry_price: float,
         stop_loss: Optional[float],
-        current_price: float
+        current_price: float,
+        atr_pct: float = None  # 新增 ATR 参数
     ) -> Dict:
         """
-        检查并修正止损方向（核心功能）
+        检查并修正止损方向（核心功能 - ATR 增强版）
         
         规则:
         - 做多(long): 止损必须 < 入场价
         - 做空(short): 止损必须 > 入场价
+        
+        ATR 动态计算:
+        - 如果提供了 atr_pct，使用 1.5 * ATR 作为止损距离
+        - 保留最小/最大止损限制作为边界
         
         Returns:
             {
@@ -355,40 +364,50 @@ class RiskAuditAgent:
                 'reason': str
             }
         """
+        # 计算动态止损距离
+        # 优先级: ATR -> 默认 2%
+        if atr_pct and atr_pct > 0:
+            # 使用 1.5 * ATR 作为止损距离（常见策略）
+            dynamic_stop_pct = min(max(atr_pct * 1.5 / 100, self.min_stop_loss_pct), self.max_stop_loss_pct)
+            log.debug(f"📊 ATR-based stop: ATR={atr_pct:.2f}%, dynamic_stop={dynamic_stop_pct:.2%}")
+        else:
+            # 无 ATR 数据，使用默认 2%
+            dynamic_stop_pct = 0.02
+        
         if not stop_loss:
-            # 没有设置止损，使用默认值（入场价的±2%）
+            # 没有设置止损，使用动态止损距离
             default_stop = (
-                entry_price * 0.98 if action == 'long' 
-                else entry_price * 1.02
+                entry_price * (1 - dynamic_stop_pct) if action == 'long' 
+                else entry_price * (1 + dynamic_stop_pct)
             )
             return {
                 'passed': False,
                 'can_fix': True,
                 'corrected_value': default_stop,
-                'reason': f"未设置止损，使用默认值{default_stop}"
+                'reason': f"未设置止损，使用动态止损(ATR-based {dynamic_stop_pct:.1%}): {default_stop:.2f}"
             }
         
         # 做多检查
         if action == 'long':
             if stop_loss >= entry_price:
-                # 止损方向错误，自动修正为入场价-2%
-                corrected = entry_price * 0.98
+                # 止损方向错误，使用动态止损修正
+                corrected = entry_price * (1 - dynamic_stop_pct)
                 return {
                     'passed': False,
                     'can_fix': True,
                     'corrected_value': corrected,
-                    'reason': f"做多止损{stop_loss}≥入场价{entry_price}，已修正为{corrected}"
+                    'reason': f"做多止损{stop_loss}≥入场价{entry_price}，使用ATR修正为{corrected:.2f}"
                 }
             
             # 检查止损距离是否合理
             stop_distance_pct = abs(entry_price - stop_loss) / entry_price
             if stop_distance_pct < self.min_stop_loss_pct:
-                corrected = entry_price * (1 - self.min_stop_loss_pct)
+                corrected = entry_price * (1 - max(dynamic_stop_pct, self.min_stop_loss_pct))
                 return {
                     'passed': False,
                     'can_fix': True,
                     'corrected_value': corrected,
-                    'reason': f"止损距离过小({stop_distance_pct:.2%})，已调整为{self.min_stop_loss_pct:.2%}"
+                    'reason': f"止损距离过小({stop_distance_pct:.2%})，已调整为{max(dynamic_stop_pct, self.min_stop_loss_pct):.2%}"
                 }
             
             if stop_distance_pct > self.max_stop_loss_pct:
@@ -403,24 +422,24 @@ class RiskAuditAgent:
         # 做空检查
         if action == 'short':
             if stop_loss <= entry_price:
-                # 止损方向错误，自动修正为入场价+2%
-                corrected = entry_price * 1.02
+                # 止损方向错误，使用动态止损修正
+                corrected = entry_price * (1 + dynamic_stop_pct)
                 return {
                     'passed': False,
                     'can_fix': True,
                     'corrected_value': corrected,
-                    'reason': f"做空止损{stop_loss}≤入场价{entry_price}，已修正为{corrected}"
+                    'reason': f"做空止损{stop_loss}≤入场价{entry_price}，使用ATR修正为{corrected:.2f}"
                 }
             
             # 检查止损距离
             stop_distance_pct = abs(stop_loss - entry_price) / entry_price
             if stop_distance_pct < self.min_stop_loss_pct:
-                corrected = entry_price * (1 + self.min_stop_loss_pct)
+                corrected = entry_price * (1 + max(dynamic_stop_pct, self.min_stop_loss_pct))
                 return {
                     'passed': False,
                     'can_fix': True,
                     'corrected_value': corrected,
-                    'reason': f"止损距离过小({stop_distance_pct:.2%})，已调整为{self.min_stop_loss_pct:.2%}"
+                    'reason': f"止损距离过小({stop_distance_pct:.2%})，已调整为{max(dynamic_stop_pct, self.min_stop_loss_pct):.2%}"
                 }
             
             if stop_distance_pct > self.max_stop_loss_pct:
