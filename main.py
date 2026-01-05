@@ -604,7 +604,7 @@ class MultiAgentTradingBot:
             
             # LOG 1: Oracle
             global_state.add_log(f"[🕵️ ORACLE] Data ready: ${current_price:,.2f}")
-            global_state.current_price = current_price
+            global_state.current_price[self.current_symbol] = current_price
             
             # Step 2: Strategist
             print("[Step 2/4] 👨‍🔬 The Strategist (QuantAnalyst) - Analyzing data...")
@@ -2545,9 +2545,10 @@ def main():
         # or exit immediately. Usually 'once' implies run and exit.
         
     else:
-        # [CHANGE] Default to Stopped - Always require user to click START from Dashboard
-        global_state.execution_mode = "Stopped"
-        log.info("⏸️ System ready (Stopped). Waiting for user to START from Dashboard.")
+        # [FIX] Default to Running - Auto-start on launch
+        global_state.execution_mode = "Running"
+        global_state.is_running = True
+        log.info("🚀 System ready (Running). Auto-starting trading loop...")
         bot.run_continuous(interval_minutes=args.interval)
 
 if __name__ == '__main__':
