@@ -44,6 +44,10 @@ class BacktestConfig:
     llm_cache: bool = True  # 缓存 LLM 响应
     llm_throttle_ms: int = 100  # LLM 调用间隔（毫秒），避免速率限制
     
+    # 🔧 P0 Realism Improvements
+    execution_latency_ms: int = 0  # 执行延迟（毫秒），模拟决策到执行的延迟，0=关闭
+    min_hold_hours: float = 3.0  # 最小持仓时间（小时），防止过度交易
+    
     def __post_init__(self):
         """验证配置参数"""
         from datetime import datetime
