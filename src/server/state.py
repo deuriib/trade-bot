@@ -169,6 +169,12 @@ class SharedState:
             'action': 'INIT',
             'cycle': 0
         })
+        # Add initial point to equity history (for Net Value Curve)
+        self.equity_history.append({
+            'time': timestamp,
+            'value': balance,
+            'cycle': 0
+        })
         log.info(f"[📊 SYSTEM] Balance tracking initialized: ${balance:.2f}")
     
     def record_trade(self, trade: Dict):
