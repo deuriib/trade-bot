@@ -69,12 +69,18 @@ from src.agents.regime_detector import RegimeDetector  # ✅ Market Regime Detec
 from src.config import Config # Re-added Config as it's used later
 
 # FastAPI dependencies
+print("[DEBUG] Importing FastAPI...")
 from fastapi import FastAPI
+print("[DEBUG] Importing StaticFiles...")
 from fastapi.staticfiles import StaticFiles
+print("[DEBUG] Importing CORSMiddleware...")
 from fastapi.middleware.cors import CORSMiddleware
+print("[DEBUG] Importing uvicorn...")
 import uvicorn
+print("[DEBUG] FastAPI imports complete")
 
 # 导入多Agent
+print("[DEBUG] Importing agents...")
 from src.agents import (
     DataSyncAgent,
     QuantAnalystAgent,
@@ -84,14 +90,21 @@ from src.agents import (
     SignalWeight,
     ReflectionAgent
 )
+print("[DEBUG] Importing StrategyEngine...")
 from src.strategy.llm_engine import StrategyEngine
+print("[DEBUG] Importing PredictAgent...")
 from src.agents.predict_agent import PredictAgent
+print("[DEBUG] Importing symbol_selector_agent...")
 from src.agents.symbol_selector_agent import get_selector  # 🔝 AUTO3 Support
+print("[DEBUG] Importing server.app...")
 from src.server.app import app
+print("[DEBUG] Importing global_state...")
 from src.server.state import global_state
 
 # ✅ [新增] 导入 TradingLogger 以便初始化数据库
-from src.monitoring.logger import TradingLogger
+# FIXME: TradingLogger 的 SQLAlchemy 导入会阻塞启动，改为延迟导入
+# from src.monitoring.logger import TradingLogger
+print("[DEBUG] All imports complete!")
 
 class MultiAgentTradingBot:
     """
@@ -236,16 +249,26 @@ class MultiAgentTradingBot:
             min_stop_loss_pct=0.005,
             max_stop_loss_pct=0.05
         )
+        print("[DEBUG] Creating MarketDataProcessor...")
         self.processor = MarketDataProcessor()  # ✅ 初始化数据处理器
+        print("[DEBUG] MarketDataProcessor created")
+        print("[DEBUG] Creating TechnicalFeatureEngineer...")
         self.feature_engineer = TechnicalFeatureEngineer()  # 🔮 特征工程器 for Prophet
+        print("[DEBUG] TechnicalFeatureEngineer created")
         # 🔧 FIX M4: Cache RegimeDetector to avoid per-cycle reinstantiation
+        print("[DEBUG] Importing RegimeDetector...")
         from src.agents.regime_detector import RegimeDetector
+        print("[DEBUG] Creating RegimeDetector...")
         self.regime_detector = RegimeDetector()  # 📊 市场状态检测器
+        print("[DEBUG] RegimeDetector created")
         
         # 🔮 为每个币种创建独立的 PredictAgent
+        print("[DEBUG] Creating PredictAgents...")
         self.predict_agents = {}
         for symbol in self.symbols:
+            print(f"[DEBUG] Creating PredictAgent for {symbol}...")
             self.predict_agents[symbol] = PredictAgent(horizon='30m', symbol=symbol)
+            print(f"[DEBUG] PredictAgent for {symbol} created")
         
         print("  ✅ DataSyncAgent ready")
         print("  ✅ QuantAnalystAgent ready")
@@ -253,14 +276,18 @@ class MultiAgentTradingBot:
         print("  ✅ RiskAuditAgent ready")
         
         # 🧠 DeepSeek 决策引擎
+        print("[DEBUG] Creating StrategyEngine...")
         self.strategy_engine = StrategyEngine()
+        print("[DEBUG] StrategyEngine created")
         if self.strategy_engine.is_ready:
             print("  ✅ DeepSeek StrategyEngine ready")
         else:
             print("  ⚠️ DeepSeek StrategyEngine not ready (Awaiting API Key)")
             
         # 🧠 Reflection Agent - 交易反思
+        print("[DEBUG] Creating ReflectionAgent...")
         self.reflection_agent = ReflectionAgent()
+        print("[DEBUG] ReflectionAgent created")
         print("  ✅ ReflectionAgent ready")
         
         print(f"\n⚙️  Trading Config:")
