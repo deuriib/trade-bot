@@ -1,5 +1,5 @@
 """
-🔝 Symbol Selector Agent - Automated Top 3 Symbol Selection (AUTO3)
+🔝 Symbol Selector Agent - AUTO3 Backtest + AUTO1 Momentum Selection
 ====================================================================
 
 Responsibilities:
@@ -8,6 +8,10 @@ Responsibilities:
 3. Stage 2: Fine filter (15m backtest) → Top 3
 4. 6-hour refresh cycle
 5. Startup execution (mandatory)
+
+AUTO1 (Lightweight):
+1. Use last 30 minutes momentum (clear up/down)
+2. Select the strongest mover as the single symbol
 
 Author: AI Trader Team
 Date: 2026-01-07
@@ -52,6 +56,10 @@ class SymbolSelectorAgent:
     MAJOR_COINS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"]
     
     FALLBACK_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]  # Top 3 fallback
+
+    AUTO1_WINDOW_MINUTES = 30
+    AUTO1_THRESHOLD_PCT = 0.8
+    AUTO1_INTERVAL = "1m"
     
     def __init__(
         self,
@@ -83,6 +91,86 @@ class SymbolSelectorAgent:
         self._stop_refresh = threading.Event()
         
         log.info(f"🔝 SymbolSelectorAgent (AUTO3) initialized: Two-stage selection, {refresh_interval_hours}h refresh")
+
+    def _interval_to_minutes(self, interval: str) -> int:
+        if not interval:
+            return 1
+        unit = interval[-1]
+        try:
+            value = int(interval[:-1])
+        except ValueError:
+            return 1
+        if unit == 'm':
+            return max(1, value)
+        if unit == 'h':
+            return max(1, value * 60)
+        if unit == 'd':
+            return max(1, value * 60 * 24)
+        return 1
+
+    async def select_auto1_recent_momentum(
+        self,
+        candidates: Optional[List[str]] = None,
+        window_minutes: int = AUTO1_WINDOW_MINUTES,
+        interval: str = AUTO1_INTERVAL,
+        threshold_pct: float = AUTO1_THRESHOLD_PCT
+    ) -> Optional[str]:
+        """
+        Select single symbol by recent momentum (AUTO1).
+
+        Picks the strongest mover over the last N minutes. If no symbol
+        exceeds the threshold, falls back to the strongest mover anyway.
+        """
+        try:
+            from src.api.binance_client import BinanceClient
+        except Exception as e:
+            log.error(f"❌ AUTO1 failed: BinanceClient unavailable: {e}")
+            return self.FALLBACK_SYMBOLS[0]
+
+        symbols = candidates or await self._get_expanded_candidates()
+        if not symbols:
+            return self.FALLBACK_SYMBOLS[0]
+
+        interval_minutes = self._interval_to_minutes(interval)
+        limit = max(2, int(window_minutes / interval_minutes))
+        client = BinanceClient()
+
+        results = []
+        for symbol in symbols:
+            try:
+                klines = client.get_klines(symbol, interval, limit=limit)
+                if len(klines) < 2:
+                    continue
+                start_price = klines[0]['close']
+                end_price = klines[-1]['close']
+                if not start_price:
+                    continue
+                change_pct = ((end_price - start_price) / start_price) * 100
+                results.append({
+                    "symbol": symbol,
+                    "change_pct": change_pct
+                })
+            except Exception as e:
+                log.warning(f"⚠️ AUTO1 skip {symbol}: {e}")
+
+        if not results:
+            fallback = symbols[0] if symbols else self.FALLBACK_SYMBOLS[0]
+            log.warning(f"⚠️ AUTO1 empty results, fallback to {fallback}")
+            return fallback
+
+        results.sort(key=lambda x: abs(x["change_pct"]), reverse=True)
+        best = results[0]
+        direction = "UP" if best["change_pct"] >= 0 else "DOWN"
+        magnitude = abs(best["change_pct"])
+
+        if magnitude >= threshold_pct:
+            log.info(f"🎯 AUTO1 selected {best['symbol']} ({direction} {best['change_pct']:+.2f}%)")
+        else:
+            log.info(
+                f"ℹ️ AUTO1 no clear trend (<{threshold_pct:.2f}%), "
+                f"fallback to {best['symbol']} ({direction} {best['change_pct']:+.2f}%)"
+            )
+        return best["symbol"]
     
     async def select_top3(self, force_refresh: bool = False) -> List[str]:
         """
