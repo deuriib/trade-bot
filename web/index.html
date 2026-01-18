@@ -822,14 +822,14 @@
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="predict_agent" checked
+                                        <input type="checkbox" name="agent-toggle" value="predict_agent" checked
                                             style="margin-right:8px;">
                                         <span>PredictAgent <span
                                                 style="color:#718096;font-size:0.8em;">(ML概率预测)</span></span>
                                     </label>
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="ai_prediction_filter_agent"
+                                        <input type="checkbox" name="agent-toggle" value="ai_prediction_filter_agent"
                                             checked style="margin-right:8px;">
                                         <span>AIPredictionFilter <span
                                                 style="color:#718096;font-size:0.8em;">(AI否决)</span></span>
@@ -845,14 +845,14 @@
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="regime_detector_agent" checked
+                                        <input type="checkbox" name="agent-toggle" value="regime_detector_agent" checked
                                             style="margin-right:8px;">
                                         <span>RegimeDetector <span
                                                 style="color:#718096;font-size:0.8em;">(市场状态)</span></span>
                                     </label>
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="position_analyzer_agent" checked
+                                        <input type="checkbox" name="agent-toggle" value="position_analyzer_agent" checked
                                             style="margin-right:8px;">
                                         <span>PositionAnalyzer <span
                                                 style="color:#718096;font-size:0.8em;">(价格位置)</span></span>
@@ -868,7 +868,7 @@
                                 <div style="display: grid; grid-template-columns: 1fr; gap: 8px;">
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="trigger_detector_agent" checked
+                                        <input type="checkbox" name="agent-toggle" value="trigger_detector_agent" checked
                                             style="margin-right:8px;">
                                         <span>TriggerDetector <span style="color:#718096;font-size:0.8em;">(5m
                                                 K线模式检测)</span></span>
@@ -886,14 +886,14 @@
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="trend_agent" checked
+                                        <input type="checkbox" name="agent-toggle" value="trend_agent" checked
                                             style="margin-right:8px;">
                                         <span>TrendAgent <span
                                                 style="color:#718096;font-size:0.8em;">(1h趋势LLM)</span></span>
                                     </label>
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="trigger_agent" checked
+                                        <input type="checkbox" name="agent-toggle" value="trigger_agent" checked
                                             style="margin-right:8px;">
                                         <span>TriggerAgent <span
                                                 style="color:#718096;font-size:0.8em;">(5m触发LLM)</span></span>
@@ -908,14 +908,14 @@
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="reflection_agent" checked
+                                        <input type="checkbox" name="agent-toggle" value="reflection_agent" checked
                                             style="margin-right:8px;">
                                         <span>ReflectionAgent <span
                                                 style="color:#718096;font-size:0.8em;">(交易反思)</span></span>
                                     </label>
                                     <label class="agent-checkbox"
                                         style="cursor:pointer; display:flex; align-items:center; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">
-                                        <input type="checkbox" name="cfg-agent" value="symbol_selector_agent" checked
+                                        <input type="checkbox" name="agent-toggle" value="symbol_selector_agent" checked
                                             style="margin-right:8px;">
                                         <span>SymbolSelector <span
                                                 style="color:#718096;font-size:0.8em;">(AUTO3选币)</span></span>
@@ -926,7 +926,7 @@
 
                         <script>
                             function setAllAgents(checked) {
-                                document.querySelectorAll('input[name="cfg-agent"]').forEach(cb => cb.checked = checked);
+                                document.querySelectorAll('input[name="agent-toggle"]').forEach(cb => cb.checked = checked);
                             }
                         </script>
                     </div>

@@ -35,11 +35,18 @@ class AgentConfig:
     trigger_detector_agent: bool = True      # TriggerDetectorAgent: 5m pattern detection
     
     # LLM Semantic Analysis (expensive, disabled by default)
-    trend_agent: bool = False                # TrendAgent: 1h trend LLM analysis
-    trigger_agent: bool = False              # TriggerAgent: 5m trigger LLM analysis
+    trend_agent_llm: bool = False            # TrendAgentLLM: 1h trend LLM analysis
+    setup_agent_llm: bool = False            # SetupAgentLLM: 15m setup LLM analysis
+    trigger_agent_llm: bool = False          # TriggerAgentLLM: 5m trigger LLM analysis
+    
+    # Local Semantic Analysis (no LLM)
+    trend_agent_local: bool = False          # TrendAgent: 1h trend rule-based analysis
+    setup_agent_local: bool = False          # SetupAgent: 15m setup rule-based analysis
+    trigger_agent_local: bool = False        # TriggerAgent: 5m trigger rule-based analysis
     
     # Trading Retrospection
-    reflection_agent: bool = True            # ReflectionAgent: Trade reflection
+    reflection_agent_llm: bool = True        # ReflectionAgentLLM: Trade reflection via LLM
+    reflection_agent_local: bool = False     # ReflectionAgent: Rule-based reflection
     
     # Symbol Selection
     symbol_selector_agent: bool = False      # SymbolSelectorAgent: AUTO3 selection
@@ -66,26 +73,48 @@ class AgentConfig:
         """
         import os
         agents_config = config.get('agents', {})
-        
-        def get_value(key: str, default: bool) -> bool:
-            """Get value from env var (priority) or config or default"""
+
+        def get_value_optional(key: str) -> Optional[bool]:
+            """Get value from env var (priority) or config or None if unset"""
             env_key = f"AGENT_{key.upper()}"
             env_val = os.environ.get(env_key)
             if env_val is not None:
                 return env_val.lower() in ('true', '1', 'yes', 'on')
-            return agents_config.get(key, default)
+            if key in agents_config:
+                return agents_config.get(key)
+            return None
+
+        def resolve_flag(key: str, default: bool) -> bool:
+            val = get_value_optional(key)
+            if val is None:
+                return default
+            return bool(val)
+
+        def resolve_llm_flag(new_key: str, legacy_key: str, default: bool) -> bool:
+            val = get_value_optional(new_key)
+            if val is not None:
+                return bool(val)
+            legacy_val = get_value_optional(legacy_key)
+            if legacy_val is not None:
+                return bool(legacy_val)
+            return default
         
         # Map config keys to dataclass fields
         return cls(
-            predict_agent=get_value('predict_agent', True),
-            ai_prediction_filter_agent=get_value('ai_prediction_filter_agent', True),
-            regime_detector_agent=get_value('regime_detector_agent', True),
-            position_analyzer_agent=get_value('position_analyzer_agent', False),
-            trigger_detector_agent=get_value('trigger_detector_agent', True),
-            trend_agent=get_value('trend_agent', False),
-            trigger_agent=get_value('trigger_agent', False),
-            reflection_agent=get_value('reflection_agent', True),
-            symbol_selector_agent=get_value('symbol_selector_agent', False),
+            predict_agent=resolve_flag('predict_agent', True),
+            ai_prediction_filter_agent=resolve_flag('ai_prediction_filter_agent', True),
+            regime_detector_agent=resolve_flag('regime_detector_agent', True),
+            position_analyzer_agent=resolve_flag('position_analyzer_agent', False),
+            trigger_detector_agent=resolve_flag('trigger_detector_agent', True),
+            trend_agent_llm=resolve_llm_flag('trend_agent_llm', 'trend_agent', False),
+            setup_agent_llm=resolve_llm_flag('setup_agent_llm', 'setup_agent', False),
+            trigger_agent_llm=resolve_llm_flag('trigger_agent_llm', 'trigger_agent', False),
+            trend_agent_local=resolve_flag('trend_agent_local', False),
+            setup_agent_local=resolve_flag('setup_agent_local', False),
+            trigger_agent_local=resolve_flag('trigger_agent_local', False),
+            reflection_agent_llm=resolve_llm_flag('reflection_agent_llm', 'reflection_agent', True),
+            reflection_agent_local=resolve_flag('reflection_agent_local', False),
+            symbol_selector_agent=resolve_flag('symbol_selector_agent', False),
         )
     
     def is_enabled(self, agent_name: str) -> bool:
@@ -99,8 +128,7 @@ class AgentConfig:
             True if enabled, False otherwise
         """
         # Convert CamelCase to snake_case if needed
-        if agent_name.endswith('Agent') and not agent_name.endswith('_agent'):
-            # Convert e.g., "PredictAgent" -> "predict_agent"
+        if not agent_name.endswith('_agent') and any(c.isupper() for c in agent_name):
             name = ''.join(['_' + c.lower() if c.isupper() else c for c in agent_name]).lstrip('_')
         else:
             name = agent_name
@@ -115,9 +143,14 @@ class AgentConfig:
             'regime_detector_agent': self.regime_detector_agent,
             'position_analyzer_agent': self.position_analyzer_agent,
             'trigger_detector_agent': self.trigger_detector_agent,
-            'trend_agent': self.trend_agent,
-            'trigger_agent': self.trigger_agent,
-            'reflection_agent': self.reflection_agent,
+            'trend_agent_llm': self.trend_agent_llm,
+            'setup_agent_llm': self.setup_agent_llm,
+            'trigger_agent_llm': self.trigger_agent_llm,
+            'trend_agent_local': self.trend_agent_local,
+            'setup_agent_local': self.setup_agent_local,
+            'trigger_agent_local': self.trigger_agent_local,
+            'reflection_agent_llm': self.reflection_agent_llm,
+            'reflection_agent_local': self.reflection_agent_local,
             'symbol_selector_agent': self.symbol_selector_agent,
         }
     

@@ -13,7 +13,31 @@ from src.config import config
 from src.utils.logger import log
 
 
-class TriggerAgent:
+def _compute_trigger_signals(data: Dict) -> Dict[str, Optional[float]]:
+    pattern = data.get('pattern') or data.get('trigger_pattern')
+    rvol = data.get('rvol') or data.get('trigger_rvol', 1.0)
+    volume_breakout = data.get('volume_breakout', False)
+
+    if pattern and pattern != 'None':
+        stance = 'CONFIRMED'
+        status = 'PATTERN_DETECTED'
+    elif volume_breakout or rvol > 1.0:
+        stance = 'VOLUME_SIGNAL'
+        status = 'BREAKOUT'
+    else:
+        stance = 'WAITING'
+        status = 'NO_SIGNAL'
+
+    return {
+        'stance': stance,
+        'status': status,
+        'pattern': pattern if pattern and pattern != 'None' else 'NONE',
+        'rvol': rvol,
+        'volume_breakout': volume_breakout
+    }
+
+
+class TriggerAgentLLM:
     """
     5m Trigger Analysis Agent
     
@@ -22,7 +46,7 @@ class TriggerAgent:
     """
     
     def __init__(self):
-        """Initialize TriggerAgent with LLM client"""
+        """Initialize TriggerAgentLLM with LLM client"""
         llm_config = config.llm
         provider = llm_config.get('provider', 'deepseek')
         
@@ -35,7 +59,7 @@ class TriggerAgent:
             api_key = config.deepseek.get('api_key')
         
         if not api_key:
-            log.warning(f"⚡ TriggerAgent: No API key for {provider}, using fallback")
+            log.warning(f"⚡ TriggerAgentLLM: No API key for {provider}, using fallback")
             api_key = "dummy-key-will-fail"
         
         self.client = create_client(provider, LLMConfig(
@@ -46,7 +70,7 @@ class TriggerAgent:
             max_tokens=300
         ))
         
-        log.info("⚡ Trigger Agent initialized")
+        log.info("⚡ Trigger Agent LLM initialized")
     
     def analyze(self, data: Dict) -> Dict:
         """
@@ -76,34 +100,20 @@ class TriggerAgent:
             
             analysis = response.content.strip()
             
-            # Determine stance based on pattern and volume
-            pattern = data.get('pattern') or data.get('trigger_pattern')
-            rvol = data.get('rvol') or data.get('trigger_rvol', 1.0)
-            volume_breakout = data.get('volume_breakout', False)
-            
-            # Determine trigger status
-            if pattern and pattern != 'None':
-                stance = 'CONFIRMED'
-                status = 'PATTERN_DETECTED'
-            elif volume_breakout or rvol > 1.0:  # OPTIMIZATION (Phase 2): Lowered from 1.5
-                stance = 'VOLUME_SIGNAL'
-                status = 'BREAKOUT'
-            else:
-                stance = 'WAITING'
-                status = 'NO_SIGNAL'
+            signals = _compute_trigger_signals(data)
             
             result = {
                 'analysis': analysis,
-                'stance': stance,
+                'stance': signals['stance'],
                 'metadata': {
-                    'status': status,
-                    'pattern': pattern if pattern and pattern != 'None' else 'NONE',
-                    'rvol': round(rvol, 1),
-                    'volume_breakout': volume_breakout
+                    'status': signals['status'],
+                    'pattern': signals['pattern'],
+                    'rvol': round(signals['rvol'], 1),
+                    'volume_breakout': signals['volume_breakout']
                 }
             }
             
-            log.info(f"⚡ Trigger Agent [{stance}] (Pattern: {result['metadata']['pattern']}, RVOL: {rvol:.1f}x) for {data.get('symbol', 'UNKNOWN')}")
+            log.info(f"⚡ Trigger Agent LLM [{signals['stance']}] (Pattern: {result['metadata']['pattern']}, RVOL: {signals['rvol']:.1f}x) for {data.get('symbol', 'UNKNOWN')}")
             
             # 🆕 保存日志
             try:
@@ -192,6 +202,60 @@ Provide a 2-3 sentence semantic analysis of the trigger situation."""
 
     def _get_fallback_analysis(self, data: Dict) -> str:
         """Fallback analysis when LLM fails"""
+        pattern = data.get('pattern') or data.get('trigger_pattern')
+        rvol = data.get('rvol') or data.get('trigger_rvol', 1.0)
+        trend = data.get('trend_direction', 'neutral')
+        
+        if pattern and pattern != 'None':
+            return f"5m trigger CONFIRMED: {pattern} pattern detected with RVOL={rvol:.1f}x. Entry signal is valid for {trend} position."
+        elif rvol > 1.5:
+            return f"5m shows high volume activity (RVOL={rvol:.1f}x) but no clear pattern. Monitor for pattern formation."
+        else:
+            return f"5m shows no trigger pattern. RVOL={rvol:.1f}x is normal. Wait for engulfing pattern or volume breakout before entry."
+
+
+class TriggerAgent:
+    """
+    5m Trigger Analysis Agent (no LLM)
+
+    Uses rule-based heuristics only.
+    """
+
+    def __init__(self):
+        log.info("⚡ Trigger Agent (no LLM) initialized")
+
+    def analyze(self, data: Dict) -> Dict:
+        signals = _compute_trigger_signals(data)
+        analysis = self._get_fallback_analysis(data)
+        result = {
+            'analysis': analysis,
+            'stance': signals['stance'],
+            'metadata': {
+                'status': signals['status'],
+                'pattern': signals['pattern'],
+                'rvol': round(signals['rvol'], 1),
+                'volume_breakout': signals['volume_breakout']
+            }
+        }
+        log.info(f"⚡ Trigger Agent (no LLM) [{signals['stance']}] (Pattern: {signals['pattern']}, RVOL: {signals['rvol']:.1f}x) for {data.get('symbol', 'UNKNOWN')}")
+
+        try:
+            from src.server.state import global_state
+            if hasattr(global_state, 'saver') and hasattr(global_state, 'current_cycle_id'):
+                global_state.saver.save_trigger_analysis(
+                    analysis=analysis,
+                    input_data=data,
+                    symbol=data.get('symbol', 'UNKNOWN'),
+                    cycle_id=global_state.current_cycle_id,
+                    model='rule_based'
+                )
+        except Exception as e:
+            log.warning(f"Failed to save trigger analysis log: {e}")
+
+        return result
+
+    def _get_fallback_analysis(self, data: Dict) -> str:
+        """Fallback analysis using rule-based heuristics"""
         pattern = data.get('pattern') or data.get('trigger_pattern')
         rvol = data.get('rvol') or data.get('trigger_rvol', 1.0)
         trend = data.get('trend_direction', 'neutral')

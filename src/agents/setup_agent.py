@@ -14,7 +14,58 @@ from src.config import config
 from src.utils.logger import log
 
 
-class SetupAgent:
+def _compute_setup_signals(data: Dict) -> Dict[str, Optional[float]]:
+    kdj_j = data.get('kdj_j', 50)
+    trend = data.get('trend_direction', 'neutral')
+    close = data.get('close_15m', 0)
+    bb_middle = data.get('bb_middle', 0)
+    macd_diff = data.get('macd_diff', 0)
+
+    if trend == 'long':
+        if kdj_j < 40:
+            stance = 'PULLBACK_ZONE'
+            zone = 'GOOD_ENTRY'
+        elif kdj_j > 80:
+            stance = 'OVERBOUGHT'
+            zone = 'WAIT'
+        else:
+            stance = 'NEUTRAL'
+            zone = 'MONITOR'
+    elif trend == 'short':
+        if kdj_j > 60:
+            stance = 'RALLY_ZONE'
+            zone = 'GOOD_ENTRY'
+        elif kdj_j < 20:
+            stance = 'OVERSOLD'
+            zone = 'WAIT'
+        else:
+            stance = 'NEUTRAL'
+            zone = 'MONITOR'
+    else:
+        stance = 'NEUTRAL'
+        zone = 'WAIT'
+
+    if macd_diff > 0:
+        macd_signal = 'BULLISH'
+    elif macd_diff < 0:
+        macd_signal = 'BEARISH'
+    else:
+        macd_signal = 'NEUTRAL'
+
+    bb_position = 'ABOVE_MID' if close > bb_middle else 'BELOW_MID'
+
+    return {
+        'stance': stance,
+        'zone': zone,
+        'kdj_j': kdj_j,
+        'trend': trend,
+        'bb_position': bb_position,
+        'macd_signal': macd_signal,
+        'macd_diff': macd_diff
+    }
+
+
+class SetupAgentLLM:
     """
     15m Setup Analysis Agent
     
@@ -23,7 +74,7 @@ class SetupAgent:
     """
     
     def __init__(self):
-        """Initialize SetupAgent with LLM client"""
+        """Initialize SetupAgentLLM with LLM client"""
         llm_config = config.llm
         provider = llm_config.get('provider', 'deepseek')
         
@@ -36,7 +87,7 @@ class SetupAgent:
             api_key = config.deepseek.get('api_key')
         
         if not api_key:
-            log.warning(f"📊 SetupAgent: No API key for {provider}, using fallback")
+            log.warning(f"📊 SetupAgentLLM: No API key for {provider}, using fallback")
             api_key = "dummy-key-will-fail"
         
         self.client = create_client(provider, LLMConfig(
@@ -47,7 +98,7 @@ class SetupAgent:
             max_tokens=300
         ))
         
-        log.info("📊 Setup Agent initialized")
+        log.info("📊 Setup Agent LLM initialized")
     
     def analyze(self, data: Dict) -> Dict:
         """
@@ -79,60 +130,22 @@ class SetupAgent:
             
             analysis = response.content.strip()
             
-            # Determine stance based on KDJ and trend direction
-            kdj_j = data.get('kdj_j', 50)
-            trend = data.get('trend_direction', 'neutral')
-            close = data.get('close_15m', 0)
-            bb_middle = data.get('bb_middle', 0)
-            
-            # Determine zone
-            if trend == 'long':
-                if kdj_j < 40:
-                    stance = 'PULLBACK_ZONE'
-                    zone = 'GOOD_ENTRY'
-                elif kdj_j > 80:
-                    stance = 'OVERBOUGHT'
-                    zone = 'WAIT'
-                else:
-                    stance = 'NEUTRAL'
-                    zone = 'MONITOR'
-            elif trend == 'short':
-                if kdj_j > 60:
-                    stance = 'RALLY_ZONE'
-                    zone = 'GOOD_ENTRY'
-                elif kdj_j < 20:
-                    stance = 'OVERSOLD'
-                    zone = 'WAIT'
-                else:
-                    stance = 'NEUTRAL'
-                    zone = 'MONITOR'
-            else:
-                stance = 'NEUTRAL'
-                zone = 'WAIT'
-            
-            # Determine MACD status
-            macd_diff = data.get('macd_diff', 0)
-            if macd_diff > 0:
-                macd_signal = 'BULLISH'
-            elif macd_diff < 0:
-                macd_signal = 'BEARISH'
-            else:
-                macd_signal = 'NEUTRAL'
+            signals = _compute_setup_signals(data)
             
             result = {
                 'analysis': analysis,
-                'stance': stance,
+                'stance': signals['stance'],
                 'metadata': {
-                    'zone': zone,
-                    'kdj_j': round(kdj_j, 1),
-                    'trend': trend.upper(),
-                    'bb_position': 'ABOVE_MID' if close > bb_middle else 'BELOW_MID',
-                    'macd_signal': macd_signal,
-                    'macd_diff': round(macd_diff, 2)
+                    'zone': signals['zone'],
+                    'kdj_j': round(signals['kdj_j'], 1),
+                    'trend': signals['trend'].upper(),
+                    'bb_position': signals['bb_position'],
+                    'macd_signal': signals['macd_signal'],
+                    'macd_diff': round(signals['macd_diff'], 2)
                 }
             }
             
-            log.info(f"📊 Setup Agent [{stance}] (Zone: {zone}, KDJ: {kdj_j:.1f}) for {data.get('symbol', 'UNKNOWN')}")
+            log.info(f"📊 Setup Agent LLM [{signals['stance']}] (Zone: {signals['zone']}, KDJ: {signals['kdj_j']:.1f}) for {data.get('symbol', 'UNKNOWN')}")
             
             # 🆕 保存日志
             try:
@@ -239,6 +252,71 @@ Consider: For LONG, we want pullback (KDJ<40 or near lower BB) + bullish MACD. F
 
     def _get_fallback_analysis(self, data: Dict) -> str:
         """Fallback analysis when LLM fails"""
+        kdj_j = data.get('kdj_j', 50)
+        trend = data.get('trend_direction', 'neutral')
+        close = data.get('close_15m', 0)
+        bb_middle = data.get('bb_middle', 0)
+        
+        if trend == 'long':
+            if kdj_j < 40:
+                return f"15m setup shows pullback zone with KDJ_J={kdj_j:.0f}. Good entry area for long positions. Price is {'below' if close < bb_middle else 'above'} BB middle."
+            elif kdj_j > 80:
+                return f"15m is overbought with KDJ_J={kdj_j:.0f}. Wait for pullback before entering long positions."
+            else:
+                return f"15m is in neutral zone with KDJ_J={kdj_j:.0f}. Wait for clearer pullback signal."
+        elif trend == 'short':
+            if kdj_j > 60:
+                return f"15m setup shows rally zone with KDJ_J={kdj_j:.0f}. Good entry area for short positions."
+            elif kdj_j < 20:
+                return f"15m is oversold with KDJ_J={kdj_j:.0f}. Wait for rally before entering short positions."
+            else:
+                return f"15m is in neutral zone with KDJ_J={kdj_j:.0f}. Wait for clearer rally signal."
+
+
+class SetupAgent:
+    """
+    15m Setup Analysis Agent (no LLM)
+
+    Uses rule-based heuristics only.
+    """
+
+    def __init__(self):
+        log.info("📊 Setup Agent (no LLM) initialized")
+
+    def analyze(self, data: Dict) -> Dict:
+        signals = _compute_setup_signals(data)
+        analysis = self._get_fallback_analysis(data)
+        result = {
+            'analysis': analysis,
+            'stance': signals['stance'],
+            'metadata': {
+                'zone': signals['zone'],
+                'kdj_j': round(signals['kdj_j'], 1),
+                'trend': signals['trend'].upper(),
+                'bb_position': signals['bb_position'],
+                'macd_signal': signals['macd_signal'],
+                'macd_diff': round(signals['macd_diff'], 2)
+            }
+        }
+        log.info(f"📊 Setup Agent (no LLM) [{signals['stance']}] (Zone: {signals['zone']}, KDJ: {signals['kdj_j']:.1f}) for {data.get('symbol', 'UNKNOWN')}")
+
+        try:
+            from src.server.state import global_state
+            if hasattr(global_state, 'saver') and hasattr(global_state, 'current_cycle_id'):
+                global_state.saver.save_setup_analysis(
+                    analysis=analysis,
+                    input_data=data,
+                    symbol=data.get('symbol', 'UNKNOWN'),
+                    cycle_id=global_state.current_cycle_id,
+                    model='rule_based'
+                )
+        except Exception as e:
+            log.warning(f"Failed to save setup analysis log: {e}")
+
+        return result
+
+    def _get_fallback_analysis(self, data: Dict) -> str:
+        """Fallback analysis using rule-based heuristics"""
         kdj_j = data.get('kdj_j', 50)
         trend = data.get('trend_direction', 'neutral')
         close = data.get('close_15m', 0)

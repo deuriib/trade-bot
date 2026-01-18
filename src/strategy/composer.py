@@ -17,20 +17,29 @@ from src.utils.logger import log
 from src.utils.semantic_converter import SemanticConverter
 from src.agents.regime_detector import RegimeDetector
 from src.agents.trigger_detector import TriggerDetector
-from src.agents.trend_agent import TrendAgent
-from src.agents.setup_agent import SetupAgent
-from src.agents.trigger_agent import TriggerAgent
 from src.server.state import global_state
 
 class StrategyComposer:
-    def __init__(self):
+    def __init__(self, use_llm: bool = False):
+        self.use_llm = use_llm
         self.regime_detector = RegimeDetector()
         self.trigger_detector = TriggerDetector()
         
         # Semantic Agents (Lazy initialization or init here)
-        self.trend_agent = TrendAgent()
-        self.setup_agent = SetupAgent()
-        self.trigger_agent = TriggerAgent()
+        if self.use_llm:
+            from src.agents.trend_agent import TrendAgentLLM
+            from src.agents.setup_agent import SetupAgentLLM
+            from src.agents.trigger_agent import TriggerAgentLLM
+            self.trend_agent = TrendAgentLLM()
+            self.setup_agent = SetupAgentLLM()
+            self.trigger_agent = TriggerAgentLLM()
+        else:
+            from src.agents.trend_agent import TrendAgent
+            from src.agents.setup_agent import SetupAgent
+            from src.agents.trigger_agent import TriggerAgent
+            self.trend_agent = TrendAgent()
+            self.setup_agent = SetupAgent()
+            self.trigger_agent = TriggerAgent()
         
     async def run_four_layer_analysis(self, 
                                       quant_analysis: Dict, 

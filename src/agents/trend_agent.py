@@ -9,12 +9,49 @@ Analyzes 1h timeframe data and produces semantic analysis:
 """
 
 from typing import Dict, Optional
-from src.llm import create_client, LLMConfig
 from src.config import config
 from src.utils.logger import log
+from src.llm import create_client, LLMConfig
 
 
-class TrendAgent:
+def _compute_trend_signals(data: Dict) -> Dict[str, Optional[float]]:
+    close = data.get('close_1h', 0)
+    ema20 = data.get('ema20_1h', 0)
+    ema60 = data.get('ema60_1h', 0)
+    adx = data.get('adx', 0)
+    oi_change = data.get('oi_change', 0)
+
+    if close > ema20 > ema60:
+        stance = 'UPTREND'
+    elif close < ema20 < ema60:
+        stance = 'DOWNTREND'
+    else:
+        stance = 'NEUTRAL'
+
+    if adx > 25:
+        strength = 'STRONG'
+    elif adx >= 20:
+        strength = 'MODERATE'
+    else:
+        strength = 'WEAK'
+
+    if abs(oi_change) > 3:
+        fuel = 'STRONG'
+    elif abs(oi_change) >= 1:
+        fuel = 'MODERATE'
+    else:
+        fuel = 'WEAK'
+
+    return {
+        'stance': stance,
+        'strength': strength,
+        'fuel': fuel,
+        'adx': adx,
+        'oi_change': oi_change
+    }
+
+
+class TrendAgentLLM:
     """
     1h Trend Analysis Agent
     
@@ -36,7 +73,7 @@ class TrendAgent:
             api_key = config.deepseek.get('api_key')
         
         if not api_key:
-            log.warning(f"📈 TrendAgent: No API key for {provider}, using fallback")
+            log.warning(f"📈 TrendAgentLLM: No API key for {provider}, using fallback")
             api_key = "dummy-key-will-fail"
         
         self.client = create_client(provider, LLMConfig(
@@ -47,7 +84,7 @@ class TrendAgent:
             max_tokens=300
         ))
         
-        log.info("📈 Trend Agent initialized")
+        log.info("📈 Trend Agent LLM initialized")
     
     def analyze(self, data: Dict) -> Dict:
         """
@@ -78,48 +115,20 @@ class TrendAgent:
             
             analysis = response.content.strip()
             
-            # Determine stance based on input data
-            close = data.get('close_1h', 0)
-            ema20 = data.get('ema20_1h', 0)
-            ema60 = data.get('ema60_1h', 0)
-            adx = data.get('adx', 0)
-            oi_change = data.get('oi_change', 0)
-            
-            if close > ema20 > ema60:
-                stance = 'UPTREND'
-            elif close < ema20 < ema60:
-                stance = 'DOWNTREND'
-            else:
-                stance = 'NEUTRAL'
-            
-            # Determine strength
-            if adx > 25:
-                strength = 'STRONG'
-            elif adx >= 20:
-                strength = 'MODERATE'
-            else:
-                strength = 'WEAK'
-            
-            # Determine fuel status
-            if abs(oi_change) > 3:
-                fuel = 'STRONG'
-            elif abs(oi_change) >= 1:
-                fuel = 'MODERATE'
-            else:
-                fuel = 'WEAK'
-            
+            signals = _compute_trend_signals(data)
+
             result = {
                 'analysis': analysis,
-                'stance': stance,
+                'stance': signals['stance'],
                 'metadata': {
-                    'strength': strength,
-                    'adx': round(adx, 1),
-                    'oi_fuel': fuel,
-                    'oi_change': round(oi_change, 1)
+                    'strength': signals['strength'],
+                    'adx': round(signals['adx'], 1),
+                    'oi_fuel': signals['fuel'],
+                    'oi_change': round(signals['oi_change'], 1)
                 }
             }
             
-            log.info(f"📈 Trend Agent [{stance}] (Strength: {strength}, ADX: {adx:.1f}) for {data.get('symbol', 'UNKNOWN')}")
+            log.info(f"📈 Trend Agent LLM [{signals['stance']}] (Strength: {signals['strength']}, ADX: {signals['adx']:.1f}) for {data.get('symbol', 'UNKNOWN')}")
             
             # 🆕 保存日志
             try:
@@ -232,4 +241,64 @@ Provide a 2-3 sentence semantic analysis of the trend situation."""
         fuel = "strong" if abs(oi_change) > 3 else "moderate" if abs(oi_change) >= 1 else "weak"
         strength = "strong" if adx > 25 else "weak"
         
+        return f"1h shows {trend} with {fuel} OI fuel ({oi_change:+.1f}%). ADX={adx:.0f} indicates {strength} trend strength. {'Suitable for trend trading.' if adx >= 20 and abs(oi_change) >= 1 else 'Not suitable for trend trading.'}"
+
+
+class TrendAgent:
+    """
+    1h Trend Analysis Agent (no LLM)
+
+    Uses rule-based heuristics only.
+    """
+
+    def __init__(self):
+        log.info("📈 Trend Agent (no LLM) initialized")
+
+    def analyze(self, data: Dict) -> Dict:
+        signals = _compute_trend_signals(data)
+        analysis = self._get_fallback_analysis(data)
+        result = {
+            'analysis': analysis,
+            'stance': signals['stance'],
+            'metadata': {
+                'strength': signals['strength'],
+                'adx': round(signals['adx'], 1),
+                'oi_fuel': signals['fuel'],
+                'oi_change': round(signals['oi_change'], 1)
+            }
+        }
+        log.info(f"📈 Trend Agent (no LLM) [{signals['stance']}] (Strength: {signals['strength']}, ADX: {signals['adx']:.1f}) for {data.get('symbol', 'UNKNOWN')}")
+
+        try:
+            from src.server.state import global_state
+            if hasattr(global_state, 'saver') and hasattr(global_state, 'current_cycle_id'):
+                global_state.saver.save_trend_analysis(
+                    analysis=analysis,
+                    input_data=data,
+                    symbol=data.get('symbol', 'UNKNOWN'),
+                    cycle_id=global_state.current_cycle_id,
+                    model='rule_based'
+                )
+        except Exception as e:
+            log.warning(f"Failed to save trend analysis log: {e}")
+
+        return result
+
+    def _get_fallback_analysis(self, data: Dict) -> str:
+        close = data.get('close_1h', 0)
+        ema20 = data.get('ema20_1h', 0)
+        ema60 = data.get('ema60_1h', 0)
+        oi_change = data.get('oi_change', 0)
+        adx = data.get('adx', 20)
+
+        if close > ema20 > ema60:
+            trend = "uptrend"
+        elif close < ema20 < ema60:
+            trend = "downtrend"
+        else:
+            trend = "neutral"
+
+        fuel = "strong" if abs(oi_change) > 3 else "moderate" if abs(oi_change) >= 1 else "weak"
+        strength = "strong" if adx > 25 else "weak"
+
         return f"1h shows {trend} with {fuel} OI fuel ({oi_change:+.1f}%). ADX={adx:.0f} indicates {strength} trend strength. {'Suitable for trend trading.' if adx >= 20 and abs(oi_change) >= 1 else 'Not suitable for trend trading.'}"

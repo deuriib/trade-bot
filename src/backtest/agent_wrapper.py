@@ -197,7 +197,7 @@ class BacktestAgentRunner:
         # We only need the DecisionCoreAgent (The Critic) to make final decisions
         self.decision_core = DecisionCoreAgent()
         self.quant_analyst = QuantAnalystAgent() # Replaces legacy calculator
-        self.strategy_composer = StrategyComposer() # ✅ Shared Strategy Logic
+        self.strategy_composer = StrategyComposer(use_llm=self.config.get('use_llm', False)) # ✅ Shared Strategy Logic
         
         # LLM log collection for backtest
         self.llm_logs = []  # Store LLM interaction logs

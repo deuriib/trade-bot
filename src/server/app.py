@@ -173,9 +173,13 @@ async def get_status(authenticated: bool = Depends(verify_auth)):
             'ExecutionEngine',
             'StrategyEngine',
             'ReflectionAgent',
+            'ReflectionAgentLLM',
             'TrendAgent',
+            'TrendAgentLLM',
             'SetupAgent',
-            'TriggerAgent'
+            'SetupAgentLLM',
+            'TriggerAgent',
+            'TriggerAgentLLM'
         ]
         status_keywords = [
             '⏹️', '⏸️', '▶️',
@@ -440,9 +444,14 @@ async def get_agent_config(authenticated: bool = Depends(verify_auth)):
         'regime_detector_agent': True,
         'position_analyzer_agent': False,
         'trigger_detector_agent': True,
-        'trend_agent': False,
-        'trigger_agent': False,
-        'reflection_agent': True,
+        'trend_agent_llm': False,
+        'setup_agent_llm': False,
+        'trigger_agent_llm': False,
+        'trend_agent_local': False,
+        'setup_agent_local': False,
+        'trigger_agent_local': False,
+        'reflection_agent_llm': True,
+        'reflection_agent_local': False,
         'symbol_selector_agent': False
     })
     return {"agents": agents}

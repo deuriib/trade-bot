@@ -94,7 +94,8 @@ from src.agents import (
     RiskAuditAgent,
     PositionInfo,
     SignalWeight,
-    ReflectionAgent
+    ReflectionAgent,
+    ReflectionAgentLLM
 )
 print("[DEBUG] Importing StrategyEngine...")
 from src.strategy.llm_engine import StrategyEngine
@@ -310,11 +311,15 @@ class MultiAgentTradingBot:
             
         # 🆕 Optional Agent: ReflectionAgent
         self.reflection_agent = None
-        if self.agent_config.reflection_agent:
+        if self.agent_config.reflection_agent_llm or self.agent_config.reflection_agent_local:
             print("[DEBUG] Creating ReflectionAgent...")
-            self.reflection_agent = ReflectionAgent()
+            if self.agent_config.reflection_agent_llm:
+                self.reflection_agent = ReflectionAgentLLM()
+                print("  ✅ ReflectionAgentLLM ready")
+            else:
+                self.reflection_agent = ReflectionAgent()
+                print("  ✅ ReflectionAgent ready (no LLM)")
             print("[DEBUG] ReflectionAgent created")
-            print("  ✅ ReflectionAgent ready")
         else:
             print("  ⏭️ ReflectionAgent disabled")
         
@@ -408,11 +413,17 @@ class MultiAgentTradingBot:
             self.predict_agents = {}
 
         # Optional Agent: ReflectionAgent
-        if self.agent_config.reflection_agent:
-            if self.reflection_agent is None:
+        if self.agent_config.reflection_agent_llm or self.agent_config.reflection_agent_local:
+            if self.agent_config.reflection_agent_llm:
+                from src.agents.reflection_agent import ReflectionAgentLLM
+                if not isinstance(self.reflection_agent, ReflectionAgentLLM):
+                    self.reflection_agent = ReflectionAgentLLM()
+                    log.info("✅ ReflectionAgentLLM enabled (runtime)")
+            else:
                 from src.agents.reflection_agent import ReflectionAgent
-                self.reflection_agent = ReflectionAgent()
-                log.info("✅ ReflectionAgent enabled (runtime)")
+                if not isinstance(self.reflection_agent, ReflectionAgent):
+                    self.reflection_agent = ReflectionAgent()
+                    log.info("✅ ReflectionAgent (no LLM) enabled (runtime)")
         else:
             self.reflection_agent = None
 
@@ -1454,8 +1465,20 @@ class MultiAgentTradingBot:
             # Store for LLM context
             global_state.four_layer_result = four_layer_result
             
-            # 🆕 MULTI-AGENT SEMANTIC ANALYSIS (LLM)
-            if self.agent_config.trend_agent or self.agent_config.trigger_agent:
+            # 🆕 MULTI-AGENT SEMANTIC ANALYSIS (LLM/Local)
+            use_trend_llm = self.agent_config.trend_agent_llm
+            use_trend_local = self.agent_config.trend_agent_local
+            use_trigger_llm = self.agent_config.trigger_agent_llm
+            use_trigger_local = self.agent_config.trigger_agent_local
+            use_trend = use_trend_llm or use_trend_local
+            use_trigger = use_trigger_llm or use_trigger_local
+
+            if use_trend and use_trend_llm and use_trend_local:
+                log.info("⚠️ Both TrendAgentLLM and TrendAgent enabled; using LLM version only")
+            if use_trigger and use_trigger_llm and use_trigger_local:
+                log.info("⚠️ Both TriggerAgentLLM and TriggerAgent enabled; using LLM version only")
+
+            if use_trend or use_trigger:
                 if not (hasattr(self, '_headless_mode') and self._headless_mode):
                     print("[Step 2.5/5] 🤖 Multi-Agent Semantic Analysis...")
                 try:
@@ -1492,21 +1515,40 @@ class MultiAgentTradingBot:
                     # Initialize agents (cached after first use)
                     tasks = {}
                     loop = asyncio.get_event_loop()
-                    if self.agent_config.trend_agent:
-                        from src.agents.trend_agent import TrendAgent
-                        from src.agents.setup_agent import SetupAgent
-                        if not hasattr(self, '_trend_agent'):
-                            self._trend_agent = TrendAgent()
-                        if not hasattr(self, '_setup_agent'):
-                            self._setup_agent = SetupAgent()
-                        tasks['trend'] = loop.run_in_executor(None, self._trend_agent.analyze, trend_data)
-                        tasks['setup'] = loop.run_in_executor(None, self._setup_agent.analyze, setup_data)
+                    if use_trend:
+                        if use_trend_llm:
+                            from src.agents.trend_agent import TrendAgentLLM
+                            from src.agents.setup_agent import SetupAgentLLM
+                            if not hasattr(self, '_trend_agent_llm'):
+                                self._trend_agent_llm = TrendAgentLLM()
+                            if not hasattr(self, '_setup_agent_llm'):
+                                self._setup_agent_llm = SetupAgentLLM()
+                            trend_agent = self._trend_agent_llm
+                            setup_agent = self._setup_agent_llm
+                        else:
+                            from src.agents.trend_agent import TrendAgent
+                            from src.agents.setup_agent import SetupAgent
+                            if not hasattr(self, '_trend_agent_local'):
+                                self._trend_agent_local = TrendAgent()
+                            if not hasattr(self, '_setup_agent_local'):
+                                self._setup_agent_local = SetupAgent()
+                            trend_agent = self._trend_agent_local
+                            setup_agent = self._setup_agent_local
+                        tasks['trend'] = loop.run_in_executor(None, trend_agent.analyze, trend_data)
+                        tasks['setup'] = loop.run_in_executor(None, setup_agent.analyze, setup_data)
                     
-                    if self.agent_config.trigger_agent:
-                        from src.agents.trigger_agent import TriggerAgent
-                        if not hasattr(self, '_trigger_agent'):
-                            self._trigger_agent = TriggerAgent()
-                        tasks['trigger'] = loop.run_in_executor(None, self._trigger_agent.analyze, trigger_data)
+                    if use_trigger:
+                        if use_trigger_llm:
+                            from src.agents.trigger_agent import TriggerAgentLLM
+                            if not hasattr(self, '_trigger_agent_llm'):
+                                self._trigger_agent_llm = TriggerAgentLLM()
+                            trigger_agent = self._trigger_agent_llm
+                        else:
+                            from src.agents.trigger_agent import TriggerAgent
+                            if not hasattr(self, '_trigger_agent_local'):
+                                self._trigger_agent_local = TriggerAgent()
+                            trigger_agent = self._trigger_agent_local
+                        tasks['trigger'] = loop.run_in_executor(None, trigger_agent.analyze, trigger_data)
                     
                     if tasks:
                         results = await asyncio.gather(*tasks.values())

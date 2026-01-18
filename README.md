@@ -23,12 +23,14 @@ Intelligent Multi-Agent Quantitative Trading Bot based on the **Adversarial Deci
 ## ✨ Key Features
 
 - 🕵️ **Perception First**: Unlike strict indicator-based systems, this framework prioritizes judging "IF we should trade" before deciding "HOW to trade".
-- 🤖 **Multi-Agent Collaboration**: 12 highly specialized Agents operating independently to form an adversarial verification chain.
-- 🔝 **AUTO3 Two-Stage Symbol Selection**: Intelligent symbol selection using two-stage filtering - Stage 1 (1h backtest) filters AI500 Top10 + Majors to Top 5, Stage 2 (15m backtest) refines to Top 2.
+- 🤖 **15-Agent Collaboration**: 15 highly specialized Agents (3 core + 12 optional) operating independently to form an adversarial verification chain.
+- 🎛️ **Agent Configuration**: Enable/disable optional agents via Dashboard, environment variables, or config file for customized strategy.
+- 🎰 **AUTO1 Symbol Selection**: Intelligent single-symbol selection based on momentum, volume, and technical indicators.
 - 🧠 **Multi-LLM Support**: Seamlessly switch between DeepSeek, OpenAI, Claude, Qwen, and Gemini via Dashboard settings.
 - 📊 **Multi-Account Trading**: Manage multiple exchange accounts with unified API abstraction (currently Binance, extensible).
 - ⚡ **Async Concurrency**: Currently fetches multi-timeframe data (5m/15m/1h) concurrently, ensuring data alignment at the snapshot moment.
 - 🖥️ **CLI Headless Mode**: Run without Web UI for headless servers - rich terminal output with 93% less log verbosity.
+- 🧪💰 **Test/Live Mode Toggle**: Quick switch between paper trading and live trading with visual confirmation.
 - 🛡️ **Safety First**: Stop-loss direction correction, capital pre-rehearsal, and veto mechanisms to safeguard live trading.
 - 📊 **Full-Link Auditing**: Every decision's adversarial process and confidence penalty details are recorded, achieving true "White-Box" decision-making.
 
@@ -341,16 +343,19 @@ After startup, visit: **<http://localhost:8000>** (or use our [Cloud Hosting](ht
 
 **Dashboard Features**:
 
-- **📉 Real-time K-Line**: Integrated TradingView widget, 1-minute real-time updates
-- **📈 Net Value Curve**: Real-time equity tracking with initial balance baseline
-- **📋 Recent Decisions**: Full decision history with 17 columns showing multi-agent analysis:
-  - **System**: Time, Cycle, Symbol
-  - **Critic**: Result (LONG/SHORT/WAIT), Confidence, Reason
-  - **Strategist**: 1h/15m/5m signals (Trend + Oscillator), Sentiment score
-  - **Prophet**: ML prediction probability with direction (↗UP/➖NEU/↘DN)
-  - **Bull/Bear**: Adversarial perspectives with stance (🔥Strong/↗Slight) and confidence
-  - **Context**: Market Regime (📈UP/📉DN/〰️CHOP), Price Position (🔝HIGH/➖MID/🔻LOW)
-  - **Guardian**: Risk level (✅SAFE/⚠️WARN/🚨DANGER), Audit result (✅PASS/⛔BLOCK), Multi-period alignment
+- **🧪💰 Test/Live Mode Toggle**: Quick switch between paper trading and real trading with visual confirmation
+- **📈 K-Line Chart**: TradingView Lightweight Charts with real-time candlestick updates, auto-synced to current symbol
+- **💰 Account Summary Panel**: Real-time display of wallet balance, available balance, equity, initial capital, PnL, and position details
+- **🤖 Multi-Agent Decision Framework**: Visual flow diagram showing all 15 agents organized by layer:
+  - **📡 Data Layer**: DataSync Agent, Symbol Selector
+  - **📊 Analysis Layer**: Quant Analyst, Regime Detector, Trigger Detector, Position Analyzer, Predict Agent
+  - **🧠 LLM Strategy Layer**: Trend Agent, Trigger Agent, AI Filter
+  - **⚖️ Decision Layer**: Decision Core with Bull/Bear debate visualization
+  - **🛡️ Execution Layer**: Risk Audit, Final Output, Reflection Agent
+- **🎛️ Agent Selection Panel**: Configure optional agents via Settings → Agents tab with checkboxes
+- **📡 Agent Activity Feed**: Real-time event stream showing agent status updates
+- **📜 Trade History**: Complete record of all trades with Open/Close cycles and PnL statistics
+- **📋 Live Log Output**: Real-time scrolling logs with agent documentation sidebar, simplified/detailed mode toggle
 
 #### 📋 Recent Decisions Indicator Guide
 
@@ -396,9 +401,6 @@ All indicators use semantic icons and two-line display format for quick visual s
 - **Risk**: `✅SAFE` / `⚠️WARN` / `🚨DANGER`
 - **Guard**: `✅PASS` / `⛔BLOCK` (with reason on hover)
 - **Aligned**: ✅ Multi-period aligned / ➖ Not aligned
-
-- **📜 Trade History**: Complete record of all trades with Open/Close cycles and PnL statistics
-- **📡 Live Log Output**: Real-time scrolling logs with highlighted Agent tags (Oracle, Strategist, Critic, Guardian), 500-line history buffer
 
 ### 5. Common Operations
 
@@ -479,47 +481,69 @@ LLM-TradeBot/
 
 ## 🎯 Core Architecture
 
-### 13-Agent Collaborative Framework + Four-Layer Strategy
+### 15-Agent Collaborative Framework + Four-Layer Strategy
 
-The system uses a **Four-Layer Strategy Filter** architecture with 13 specialized Agents collaborating to make trading decisions:
+The system uses a **Four-Layer Strategy Filter** architecture with **15 specialized Agents** collaborating to make trading decisions. Core agents are always enabled, while optional agents can be configured via Dashboard or `config.yaml`.
 
-#### Symbol Selection Layer Agents
-
-| Agent | Role | Responsibility |
-|-------|------|----------------|
-| **🔝 SymbolSelectorAgent** | AUTO3 Selector | Two-stage backtest selection: AI500 Top10 + Majors → Top 5 (1h) → Top 2 (15m) |
-
-#### Data Layer Agents
+#### Core Agents (Always Enabled)
 
 | Agent | Role | Responsibility |
 |-------|------|----------------|
 | **🕵️ DataSyncAgent** | The Oracle | Async concurrent fetch of 5m/15m/1h K-lines, ensuring snapshot consistency |
 | **👨‍🔬 QuantAnalystAgent** | The Strategist | Generates trend scores, oscillators, sentiment, and OI Fuel (Volume Proxy) |
+| **🛡️ RiskAuditAgent** | The Guardian | Risk audit with absolute veto power on all trades |
 
-#### Prediction Layer Agents
-
-| Agent | Role | Responsibility |
-|-------|------|----------------|
-| **🔮 PredictAgent** | The Prophet | Predicts price probability using Rule-based/ML scoring |
-| **🎯 RegimeDetector** | Regime Analyzer | Detects market state (Trending/Choppy) and ADX strength |
-| **🤖 AIFilter** | AI Validator | AI-Trend alignment verification with veto power |
-
-#### Semantic Analysis Layer Agents (LLM Context Generation)
+#### Symbol Selection Layer (Optional)
 
 | Agent | Role | Responsibility |
 |-------|------|----------------|
-| **📈 TrendAgent** | Trend Summarizer | Generates trend semantic analysis (UPTREND/DOWNTREND) |
-| **📊 SetupAgent** | Setup Analyzer | Generates entry zone analysis (PULLBACK_ZONE/OVERBOUGHT) |
-| **⚡ TriggerAgent** | Trigger Reporter | Generates trigger signal analysis (CONFIRMED/WAITING) |
+| **🎰 SymbolSelectorAgent** | AUTO1/3 Selector | Two-stage backtest selection: AI500 Top10 + Majors → Top 5 (1h) → Top 2 (15m) |
 
-#### Decision & Execution Layer Agents
+#### Prediction & Analysis Layer (Optional)
 
 | Agent | Role | Responsibility |
 |-------|------|----------------|
-| **🧠 StrategyEngine** | LLM Decision | DeepSeek LLM Bull/Bear debate decision engine |
-| **👮 RiskAuditAgent** | The Guardian | Risk audit with absolute veto power |
-| **🧠 ReflectionAgent** | The Philosopher | Trade reflection, provides historical lessons to LLM |
+| **🎯 PredictAgent** | The Prophet | Predicts price probability using LightGBM ML model (auto-retrain every 2h) |
+| **🤖 AIPredictionFilterAgent** | AI Validator | AI-Trend alignment verification with veto power |
+| **🔮 RegimeDetectorAgent** | Regime Analyzer | Detects market state (Trending/Choppy/Ranging) and ADX strength |
+| **📍 PositionAnalyzerAgent** | Position Tracker | Price position analysis (High/Mid/Low zone) and S/R level detection |
+| **⚡ TriggerDetectorAgent** | Entry Scanner | 5m pattern detection and trigger signal scoring |
+
+#### LLM Semantic Analysis Layer (Optional, LLM-Intensive)
+
+| Agent | Role | Responsibility |
+|-------|------|----------------|
+| **📈 TrendAgent** | Trend Summarizer | Generates 1h trend semantic analysis (UPTREND/DOWNTREND) via LLM |
+| **🔥 TriggerAgent** | Trigger Analyst | Generates 5m trigger signal analysis (CONFIRMED/WAITING) via LLM |
+
+#### Decision & Execution Layer
+
+| Agent | Role | Responsibility |
+|-------|------|----------------|
+| **⚖️ DecisionCoreAgent** | The Critic | LLM Bull/Bear debate decision engine with confidence scoring |
 | **🚀 ExecutionEngine** | The Executor | Precision order execution and state management |
+| **🪞 ReflectionAgent** | The Philosopher | Trade reflection every 10 trades, provides historical lessons to LLM |
+
+### Agent Configuration
+
+Agents can be configured in multiple ways (priority order):
+1. **Dashboard Settings** → Agents tab with checkboxes for each optional agent
+2. **Environment Variables** → `AGENT_<NAME>=true/false` (e.g., `AGENT_PREDICT_AGENT=false`)
+3. **config.yaml** → `agents:` section
+
+```yaml
+# config.yaml example
+agents:
+  predict_agent: true          # ML probability prediction
+  ai_prediction_filter_agent: true  # AI veto mechanism
+  regime_detector_agent: true  # Market state detection
+  position_analyzer_agent: false  # Price position analysis
+  trigger_detector_agent: true  # 5m pattern detection
+  trend_agent: false           # LLM trend analysis (expensive)
+  trigger_agent: false         # LLM trigger analysis (expensive)
+  reflection_agent: true       # Trade reflection
+  symbol_selector_agent: false # AUTO symbol selection
+```
 
 ### Four-Layer Strategy Filter
 
@@ -535,7 +559,7 @@ Layer 4: Trigger (5m Pattern + RVOL volume confirmation)
     ↓
 🧠 LLM Decision (DeepSeek Bull/Bear Debate)
     ↓
-👮 Risk Audit (Veto Power)
+🛡️ Risk Audit (Veto Power)
     ↓
 🚀 Execution
 ```
@@ -713,6 +737,19 @@ data/
 ---
 
 ## 🎉 Latest Updates
+
+**2026-01-19**:
+
+- ✅ **Dashboard UI Enhancement**: Modernized dashboard with gold-themed NoFX design.
+  - **K-Line Chart**: TradingView Lightweight Charts integration for real-time candlestick display
+  - **Account Summary Panel**: Real-time balance, equity, PnL, and position tracking
+  - **Test/Live Mode Toggle**: Quick switch with visual confirmation and safety warnings
+  - **Agent Selection Panel**: Configure optional agents via Settings → Agents tab
+  - **Current Symbol Display**: Shows AUTO1 selected symbol in agent framework header
+- ✅ **15-Agent Framework**: Expanded to 15 specialized agents with configurable optional agents.
+  - 3 Core agents (DataSync, QuantAnalyst, RiskAudit) always enabled
+  - 9 Optional agents configurable via Dashboard/env/config
+  - Agent status visualization in flow diagram
 
 **2026-01-07**:
 

@@ -25,7 +25,7 @@ from .risk_audit_agent import RiskAuditAgent, RiskCheckResult, PositionInfo, Ris
 
 # Optional Agents
 from .predict_agent import PredictAgent, PredictResult
-from .reflection_agent import ReflectionAgent, ReflectionResult
+from .reflection_agent import ReflectionAgent, ReflectionAgentLLM, ReflectionResult
 
 __all__ = [
     # Framework
@@ -48,7 +48,7 @@ __all__ = [
     'PredictAgent',
     'PredictResult',
     'ReflectionAgent',
+    'ReflectionAgentLLM',
     'ReflectionResult',
 ]
-
 
