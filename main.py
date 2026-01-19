@@ -390,6 +390,51 @@ class MultiAgentTradingBot:
                         self.predict_agents[symbol] = PredictAgent(symbol=symbol)
                         log.info(f"🆕 Initialized PredictAgent for {symbol}")
 
+    def _run_symbol_selector(self, reason: str = "scheduled") -> None:
+        """Run symbol selector and update symbols (AUTO1/AUTO3)."""
+        if not self.agent_config.symbol_selector_agent:
+            return
+
+        selector_started = time.time()
+        try:
+            log.info(f"🎰 SymbolSelectorAgent ({reason}) running before analysis...")
+            global_state.add_log(f"[🎰 SELECTOR] Symbol selection started ({reason})")
+            selector = get_selector()
+            if self.use_auto3:
+                top_symbols = asyncio.run(selector.select_top3(force_refresh=False))
+            else:
+                top_symbols = asyncio.run(
+                    selector.select_auto1_recent_momentum(candidates=self.symbols)
+                ) or []
+
+            if top_symbols:
+                self.symbols = top_symbols
+                self.current_symbol = top_symbols[0]
+                global_state.symbols = top_symbols
+                global_state.current_symbol = self.current_symbol
+                if self.primary_symbol not in self.symbols:
+                    self.primary_symbol = self.current_symbol
+                    log.info(f"🔄 Primary symbol updated to {self.primary_symbol} (selector)")
+
+                if self.agent_config.predict_agent:
+                    for symbol in top_symbols:
+                        if symbol not in self.predict_agents:
+                            self.predict_agents[symbol] = PredictAgent(horizon='30m', symbol=symbol)
+                            log.info(f"🆕 Initialized PredictAgent for {symbol} (Selector)")
+
+                if self.use_auto3:
+                    selector.start_auto_refresh()
+                log.info(f"✅ SymbolSelectorAgent ready: {', '.join(top_symbols)}")
+                global_state.add_log(f"[🎰 SELECTOR] Selected: {', '.join(top_symbols)}")
+            else:
+                log.warning("⚠️ SymbolSelectorAgent returned empty selection")
+                global_state.add_log("[🎰 SELECTOR] Empty selection (fallback to configured symbols)")
+        except Exception as e:
+            log.error(f"❌ SymbolSelectorAgent failed: {e}")
+            global_state.add_log(f"[🎰 SELECTOR] Failed: {e}")
+        finally:
+            self.selector_last_run = selector_started
+
     def _apply_agent_config(self, agents: Dict[str, bool]) -> None:
         """Apply runtime agent config and sync optional agent instances."""
         from src.agents.agent_config import AgentConfig
@@ -2950,52 +2995,9 @@ class MultiAgentTradingBot:
                 if cycle_num == 1:
                     global_state.clear_init_logs()
 
-                # 🔝 Symbol Selector Agent runs every 10 minutes (must run before analysis)
-                should_run_selector = (
-                    self.agent_config.symbol_selector_agent
-                    and (self.selector_last_run == 0.0
-                         or (time.time() - self.selector_last_run) >= self.selector_interval_sec)
-                )
-                if should_run_selector:
-                    selector_started = time.time()
-                    try:
-                        log.info("🎰 SymbolSelectorAgent running before analysis...")
-                        global_state.add_log("[🎰 SELECTOR] Symbol selection started")
-                        selector = get_selector()
-                        if self.use_auto3:
-                            top_symbols = asyncio.run(selector.select_top3(force_refresh=False))
-                        else:
-                            top_symbols = asyncio.run(
-                                selector.select_auto1_recent_momentum(candidates=self.symbols)
-                            ) or []
-
-                        if top_symbols:
-                            self.symbols = top_symbols
-                            self.current_symbol = top_symbols[0]
-                            global_state.symbols = top_symbols
-                            global_state.current_symbol = self.current_symbol
-                            if self.primary_symbol not in self.symbols:
-                                self.primary_symbol = self.current_symbol
-                                log.info(f"🔄 Primary symbol updated to {self.primary_symbol} (selector)")
-
-                            if self.agent_config.predict_agent:
-                                for symbol in top_symbols:
-                                    if symbol not in self.predict_agents:
-                                        self.predict_agents[symbol] = PredictAgent(horizon='30m', symbol=symbol)
-                                        log.info(f"🆕 Initialized PredictAgent for {symbol} (Selector)")
-
-                            if self.use_auto3:
-                                selector.start_auto_refresh()
-                            log.info(f"✅ SymbolSelectorAgent ready: {', '.join(top_symbols)}")
-                            global_state.add_log(f"[🎰 SELECTOR] Selected: {', '.join(top_symbols)}")
-                        else:
-                            log.warning("⚠️ SymbolSelectorAgent returned empty selection")
-                            global_state.add_log("[🎰 SELECTOR] Empty selection (fallback to configured symbols)")
-                    except Exception as e:
-                        log.error(f"❌ SymbolSelectorAgent failed: {e}")
-                        global_state.add_log(f"[🎰 SELECTOR] Failed: {e}")
-                    finally:
-                        self.selector_last_run = selector_started
+                # 🔝 Symbol Selector Agent: run once at startup, then every 10 minutes during wait
+                if self.selector_last_run == 0.0 and self.agent_config.symbol_selector_agent:
+                    self._run_symbol_selector(reason="startup")
                 
                 # 🧪 Test Mode: Record start of cycle account state (for Net Value Curve)
                 if self.test_mode:
@@ -3099,6 +3101,12 @@ class MultiAgentTradingBot:
                     # 每秒检查当前间隔设置 (支持动态调整)
                     current_interval = global_state.cycle_interval
                     wait_seconds = current_interval * 60
+
+                    # Run symbol selector on schedule (independent of cycle interval)
+                    if (self.agent_config.symbol_selector_agent
+                            and (time.time() - self.selector_last_run) >= self.selector_interval_sec
+                            and global_state.execution_mode == "Running"):
+                        self._run_symbol_selector(reason="scheduled")
                     
                     # 如果已经等待足够时间，结束等待
                     if elapsed_seconds >= wait_seconds:

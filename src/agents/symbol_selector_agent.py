@@ -60,6 +60,7 @@ class SymbolSelectorAgent:
     AUTO1_WINDOW_MINUTES = 30
     AUTO1_THRESHOLD_PCT = 0.8
     AUTO1_INTERVAL = "1m"
+    AUTO1_VOLUME_RATIO_THRESHOLD = 1.2
     
     def __init__(
         self,
@@ -115,7 +116,8 @@ class SymbolSelectorAgent:
         candidates: Optional[List[str]] = None,
         window_minutes: int = AUTO1_WINDOW_MINUTES,
         interval: str = AUTO1_INTERVAL,
-        threshold_pct: float = AUTO1_THRESHOLD_PCT
+        threshold_pct: float = AUTO1_THRESHOLD_PCT,
+        volume_ratio_threshold: float = AUTO1_VOLUME_RATIO_THRESHOLD
     ) -> List[str]:
         """
         Select symbols by recent momentum (AUTO1).
@@ -135,23 +137,33 @@ class SymbolSelectorAgent:
             return [self.FALLBACK_SYMBOLS[0]]
 
         interval_minutes = self._interval_to_minutes(interval)
-        limit = max(2, int(window_minutes / interval_minutes))
+        window_count = max(2, int(window_minutes / interval_minutes))
+        limit = max(4, window_count * 2)
         client = BinanceClient()
 
         results = []
         for symbol in symbols:
             try:
                 klines = client.get_klines(symbol, interval, limit=limit)
-                if len(klines) < 2:
+                if len(klines) < window_count + 1:
                     continue
-                start_price = klines[0]['close']
-                end_price = klines[-1]['close']
+                recent = klines[-window_count:]
+                previous = klines[:-window_count] if len(klines) > window_count else []
+
+                start_price = recent[0]['close']
+                end_price = recent[-1]['close']
                 if not start_price:
                     continue
                 change_pct = ((end_price - start_price) / start_price) * 100
+                recent_volume = sum(k.get('volume', 0.0) for k in recent)
+                prev_volume = sum(k.get('volume', 0.0) for k in previous) if previous else 0.0
+                volume_ratio = (recent_volume / prev_volume) if prev_volume > 0 else 1.0
+                score = abs(change_pct) * volume_ratio
                 results.append({
                     "symbol": symbol,
-                    "change_pct": change_pct
+                    "change_pct": change_pct,
+                    "volume_ratio": volume_ratio,
+                    "score": score
                 })
             except Exception as e:
                 log.warning(f"⚠️ AUTO1 skip {symbol}: {e}")
@@ -164,6 +176,24 @@ class SymbolSelectorAgent:
         best_up = max(results, key=lambda x: x["change_pct"])
         best_down = min(results, key=lambda x: x["change_pct"])
 
+        strong_ups = [
+            r for r in results
+            if r["change_pct"] > 0
+            and abs(r["change_pct"]) >= threshold_pct
+            and r["volume_ratio"] >= volume_ratio_threshold
+        ]
+        strong_downs = [
+            r for r in results
+            if r["change_pct"] < 0
+            and abs(r["change_pct"]) >= threshold_pct
+            and r["volume_ratio"] >= volume_ratio_threshold
+        ]
+
+        if strong_ups:
+            best_up = max(strong_ups, key=lambda x: x["score"])
+        if strong_downs:
+            best_down = max(strong_downs, key=lambda x: x["score"])
+
         selected = []
         if best_up["change_pct"] > 0:
             selected.append(best_up["symbol"])
@@ -175,21 +205,27 @@ class SymbolSelectorAgent:
             best = results[0]
             selected.append(best["symbol"])
 
-        def log_selection(label: str, entry: Dict[str, float]) -> None:
+        def log_selection(label: str, entry: Dict[str, float], strong: bool) -> None:
             magnitude = abs(entry["change_pct"])
             direction = "UP" if entry["change_pct"] >= 0 else "DOWN"
-            if magnitude >= threshold_pct:
-                log.info(f"🎯 AUTO1 {label}: {entry['symbol']} ({direction} {entry['change_pct']:+.2f}%)")
+            vol_ratio = entry.get("volume_ratio", 1.0)
+            vol_text = f"VOL x{vol_ratio:.2f}"
+            if strong:
+                log.info(
+                    f"🎯 AUTO1 {label}: {entry['symbol']} ({direction} {entry['change_pct']:+.2f}% | {vol_text})"
+                )
             else:
                 log.info(
-                    f"ℹ️ AUTO1 {label} weak (<{threshold_pct:.2f}%): "
-                    f"{entry['symbol']} ({direction} {entry['change_pct']:+.2f}%)"
+                    f"ℹ️ AUTO1 {label} weak (<{threshold_pct:.2f}% or VOL<{volume_ratio_threshold:.2f}x): "
+                    f"{entry['symbol']} ({direction} {entry['change_pct']:+.2f}% | {vol_text})"
                 )
 
         if best_up["symbol"] in selected:
-            log_selection("UP", best_up)
+            is_strong = best_up in strong_ups
+            log_selection("UP", best_up, is_strong)
         if best_down["symbol"] in selected and best_down["symbol"] != best_up["symbol"]:
-            log_selection("DOWN", best_down)
+            is_strong = best_down in strong_downs
+            log_selection("DOWN", best_down, is_strong)
 
         return selected
     
