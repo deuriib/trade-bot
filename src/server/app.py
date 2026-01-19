@@ -254,7 +254,8 @@ async def get_status(authenticated: bool = Depends(verify_auth)):
         },
         "agents": {
             "critic_confidence": global_state.critic_confidence,
-            "guardian_status": global_state.guardian_status
+            "guardian_status": global_state.guardian_status,
+            "symbol_selector": getattr(global_state, 'symbol_selector', {})
         },
         "account": global_state.account_overview,
         "virtual_account": {

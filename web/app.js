@@ -1115,8 +1115,8 @@ function updateAgentFramework(system, decision, agents) {
     const resetFramework = (options = {}) => {
         const { forceRunning = false } = options;
         const outputIds = [
-            'out-5m', 'out-15m', 'out-1h', 'out-oi',
-            'out-selector-mode', 'out-selector-symbol', 'out-selector-score',
+            'out-5m', 'out-15m', 'out-1m', 'out-oi',
+            'out-selector-mode', 'out-selector-symbol', 'out-selector-bias', 'out-selector-score',
             'out-ema', 'out-rsi', 'out-macd', 'out-bb',
             'out-regime', 'out-adx', 'out-regime-conf',
             'out-pattern', 'out-trigger-signal', 'out-trigger-score',
@@ -1195,20 +1195,34 @@ function updateAgentFramework(system, decision, agents) {
     };
 
     const updateSymbolSelectorCard = () => {
+        const selectorInfo = agents?.symbol_selector || {};
         if (!isEnabled('symbol_selector_agent')) {
             setAgentStatus('flow-symbol-selector', 'Off');
             setOutput('out-selector-mode', '--');
             setOutput('out-selector-symbol', '--');
+            setOutput('out-selector-bias', '--');
             setOutput('out-selector-score', '--');
             setSummary('sum-symbol-selector', 'Selector off.');
             return;
         }
 
         const selectorSymbols = Array.isArray(system?.symbols) ? system.symbols : [];
-        const selectorMode = selectorSymbols.length > 1 ? 'AUTO' : 'MANUAL';
-        const selectorSymbol = system?.current_symbol
+        const selectorMode = selectorInfo.mode
+            || (selectorSymbols.length > 1 ? 'AUTO' : 'MANUAL');
+        const selectorSymbol = selectorInfo.symbol
+            || system?.current_symbol
             || decision?.symbol
             || (selectorSymbols.length > 0 ? selectorSymbols[0] : '--');
+        const selectorChange = selectorInfo.change_pct;
+        const selectorVolume = selectorInfo.volume_ratio;
+        const selectorScore = selectorInfo.score;
+        let selectorBias = '--';
+        if (selectorInfo.direction) {
+            const dir = String(selectorInfo.direction).toUpperCase();
+            if (dir === 'UP' || dir === 'BULL' || dir === 'BULLISH') selectorBias = '看涨';
+            else if (dir === 'DOWN' || dir === 'BEAR' || dir === 'BEARISH') selectorBias = '看跌';
+            else if (dir === 'FLAT' || dir === 'NEUTRAL') selectorBias = '中性';
+        }
 
         if (isRunningMode) {
             setAgentStatus('flow-symbol-selector', 'Done');
@@ -1218,8 +1232,22 @@ function updateAgentFramework(system, decision, agents) {
 
         setOutput('out-selector-mode', selectorMode);
         setOutput('out-selector-symbol', selectorSymbol);
-        setOutput('out-selector-score', '--');
-        setSummary('sum-symbol-selector', `${selectorMode} -> ${selectorSymbol}.`);
+        setOutput('out-selector-bias', selectorBias);
+        let scoreText = '--';
+        if (selectorChange !== undefined && selectorChange !== null) {
+            scoreText = `${formatNumber(selectorChange, 2)}%`;
+        } else if (selectorScore !== undefined && selectorScore !== null) {
+            scoreText = formatNumber(selectorScore, 2);
+        }
+        setOutput('out-selector-score', scoreText);
+        const biasPart = selectorBias !== '--' ? ` ${selectorBias}` : '';
+        const changePart = selectorChange !== undefined && selectorChange !== null
+            ? ` ${formatNumber(selectorChange, 2)}%`
+            : '';
+        const volPart = selectorVolume !== undefined && selectorVolume !== null
+            ? ` | RVOL ${formatNumber(selectorVolume, 2)}x`
+            : '';
+        setSummary('sum-symbol-selector', `${selectorMode} -> ${selectorSymbol}${biasPart}${changePart}${volPart}.`);
 
         if (selectorSymbol !== '--'
             && selectorSymbol !== window.lastChartSymbol
@@ -1297,7 +1325,7 @@ function updateAgentFramework(system, decision, agents) {
         // Update data outputs if available
         setOutput('out-5m', '✓');
         setOutput('out-15m', '✓');
-        setOutput('out-1h', '✓');
+        setOutput('out-1m', '✓');
         const oiChange = decision.four_layer_status?.oi_change ?? decision.vote_details?.oi_fuel?.oi_change_24h;
         setOutput('out-oi', oiChange !== undefined && oiChange !== null ? `${formatNumber(oiChange, 1)}%` : '✓');
     }
@@ -1305,7 +1333,7 @@ function updateAgentFramework(system, decision, agents) {
     let dataSummary = 'Feed idle.';
     if (isRunningMode) {
         const oiPart = oiSummary !== undefined && oiSummary !== null ? ` | OI ${formatNumber(oiSummary, 1)}%` : '';
-        dataSummary = `Feed 5/15/1h${oiPart}.`;
+        dataSummary = `Feed 1/5/15${oiPart}.`;
     } else if (isPausedMode) {
         dataSummary = 'Feed paused.';
     } else if (isStoppedMode) {

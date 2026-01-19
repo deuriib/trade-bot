@@ -412,6 +412,36 @@ class MultiAgentTradingBot:
                 self.current_symbol = top_symbols[0]
                 global_state.symbols = top_symbols
                 global_state.current_symbol = self.current_symbol
+                selector_payload = {
+                    "mode": "AUTO3" if self.use_auto3 else "AUTO1",
+                    "symbols": list(top_symbols),
+                    "symbol": self.current_symbol,
+                    "direction": None,
+                    "change_pct": None,
+                    "volume_ratio": None,
+                    "score": None,
+                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                if not self.use_auto3:
+                    auto1 = getattr(selector, "last_auto1", {}) or {}
+                    metrics = auto1.get("results", {}).get(self.current_symbol, {})
+                    change_pct = metrics.get("change_pct")
+                    if isinstance(change_pct, (int, float)):
+                        if change_pct > 0:
+                            selector_payload["direction"] = "UP"
+                        elif change_pct < 0:
+                            selector_payload["direction"] = "DOWN"
+                        else:
+                            selector_payload["direction"] = "FLAT"
+                        selector_payload["change_pct"] = change_pct
+                    volume_ratio = metrics.get("volume_ratio")
+                    if isinstance(volume_ratio, (int, float)):
+                        selector_payload["volume_ratio"] = volume_ratio
+                    score = metrics.get("score")
+                    if isinstance(score, (int, float)):
+                        selector_payload["score"] = score
+                    selector_payload["window_minutes"] = auto1.get("window_minutes")
+                global_state.symbol_selector = selector_payload
                 if self.primary_symbol not in self.symbols:
                     self.primary_symbol = self.current_symbol
                     log.info(f"🔄 Primary symbol updated to {self.primary_symbol} (selector)")
@@ -1357,6 +1387,10 @@ class MultiAgentTradingBot:
                 
                 log.info(f"📊 1h EMA: Close=${close_1h:.2f}, EMA20=${ema20_1h:.2f}, EMA60=${ema60_1h:.2f} => {trend_1h.upper()}")
             
+            oi_divergence_warning = None
+            oi_divergence_warn = 15.0
+            oi_divergence_block = 60.0
+
             if trend_1h == 'neutral':
                 four_layer_result['blocking_reason'] = 'No clear 1h trend (EMA 20/60)'
                 log.info("❌ Layer 1 FAIL: No clear trend")
@@ -1364,17 +1398,23 @@ class MultiAgentTradingBot:
             elif adx_value < 15: # OPTIMIZATION (Phase 2): Lowered from 20
                 four_layer_result['blocking_reason'] = f"Weak Trend Strength (ADX {adx_value:.0f} < 15)"
                 log.info(f"❌ Layer 1 FAIL: ADX={adx_value:.0f} < 15, trend not strong enough")
-            # 📈 OPTIMIZED: Raised OI divergence threshold from -5% to -15%
-            elif trend_1h == 'long' and oi_change < -15.0:
+            elif trend_1h == 'long' and oi_change < -oi_divergence_block:
                 four_layer_result['blocking_reason'] = f"OI Divergence: Trend UP but OI {oi_change:.1f}%"
                 log.warning(f"🚨 Layer 1 FAIL: OI Divergence - Price up but OI {oi_change:.1f}%")
-            elif trend_1h == 'short' and oi_change > 15.0:
+            elif trend_1h == 'short' and oi_change > oi_divergence_block:
                 four_layer_result['blocking_reason'] = f"OI Divergence: Trend DOWN but OI +{oi_change:.1f}%"
                 log.warning(f"🚨 Layer 1 FAIL: OI Divergence - Price down but OI +{oi_change:.1f}%")
+            elif trend_1h == 'long' and oi_change < -oi_divergence_warn:
+                oi_divergence_warning = f"OI Divergence: Trend UP but OI {oi_change:.1f}%"
+                log.warning(f"⚠️ Layer 1 WARNING: OI Divergence - Price up but OI {oi_change:.1f}%")
+            elif trend_1h == 'short' and oi_change > oi_divergence_warn:
+                oi_divergence_warning = f"OI Divergence: Trend DOWN but OI +{oi_change:.1f}%"
+                log.warning(f"⚠️ Layer 1 WARNING: OI Divergence - Price down but OI +{oi_change:.1f}%")
             elif trend_1h == 'long' and oi_fuel.get('whale_trap_risk', False):
                 four_layer_result['blocking_reason'] = f"Whale trap detected (OI {oi_change:.1f}%)"
                 log.warning(f"🐋 Layer 1 FAIL: Whale exit trap")
-            else:
+
+            if not four_layer_result.get('blocking_reason'):
                 four_layer_result['layer1_pass'] = True
                 
                 # 🔴 Issue #3 Fix: Weak Fuel is WARNING, not BLOCK
@@ -1386,6 +1426,14 @@ class MultiAgentTradingBot:
                 else:
                     # Specification: Strong Fuel > 3%, Moderate 1-3%
                     fuel_strength = 'Strong' if abs(oi_change) > 3.0 else 'Moderate'
+                if oi_divergence_warning:
+                    existing_warning = four_layer_result.get('fuel_warning')
+                    if existing_warning:
+                        four_layer_result['fuel_warning'] = f"{existing_warning} | {oi_divergence_warning}"
+                    else:
+                        four_layer_result['fuel_warning'] = oi_divergence_warning
+                    current_penalty = four_layer_result.get('confidence_penalty', 0)
+                    four_layer_result['confidence_penalty'] = min(current_penalty, -10) if current_penalty else -10
                 log.info(f"✅ Layer 1 PASS: {trend_1h.upper()} trend + {fuel_strength} Fuel (OI {oi_change:+.1f}%)")
                 
                 # Layer 2: AI Prediction Filter (Optional - skip if disabled)

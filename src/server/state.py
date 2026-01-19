@@ -36,6 +36,7 @@ class SharedState:
     prophet_probability: float = 0.0  # PredictAgent 上涨概率
     critic_confidence: Dict[str, float] = field(default_factory=dict)
     guardian_status: str = "Standing By"
+    symbol_selector: Dict[str, Any] = field(default_factory=dict)
     
     # Account Data
     account_overview: Dict[str, float] = field(default_factory=lambda: {

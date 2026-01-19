@@ -212,8 +212,8 @@
                                                     class="output-value" id="out-5m">--</span></div>
                                             <div class="output-row"><span class="output-label">15m:</span><span
                                                     class="output-value" id="out-15m">--</span></div>
-                                            <div class="output-row"><span class="output-label">1h:</span><span
-                                                    class="output-value" id="out-1h">--</span></div>
+                                            <div class="output-row"><span class="output-label">1m:</span><span
+                                                    class="output-value" id="out-1m">--</span></div>
                                             <div class="output-row"><span class="output-label">OI:</span><span
                                                     class="output-value" id="out-oi">--</span></div>
                                         </div>
@@ -230,6 +230,8 @@
                                                     class="output-value" id="out-selector-mode">AUTO1</span></div>
                                             <div class="output-row"><span class="output-label">Symbol:</span><span
                                                     class="output-value" id="out-selector-symbol">--</span></div>
+                                            <div class="output-row"><span class="output-label">Bias:</span><span
+                                                    class="output-value" id="out-selector-bias">--</span></div>
                                             <div class="output-row"><span class="output-label">Score:</span><span
                                                     class="output-value" id="out-selector-score">--</span></div>
                                         </div>
@@ -1105,7 +1107,7 @@
         }
     </style>
     </style>
-    <script src="/static/app.js?v=20260119_0445"></script>
+    <script src="/static/app.js?v=20260120_0007"></script>
     <script>
         // Inline script removed (logic handled in app.js).
     </script>
@@ -1147,7 +1149,7 @@
                             // Pipeline Demo Animation
                             function runPipelineDemo() {
                                 const agents = [
-                                    { id: 'agent-data-sync', status: '✅ Fetched 3 TFs', result: '5m/15m/1h OK' },
+                                    { id: 'agent-data-sync', status: '✅ Fetched 3 TFs', result: '1m/5m/15m OK' },
                                     { id: 'agent-quant', status: '✅ Analyzed', result: 'EMA↑ RSI=42' },
                                     { id: 'agent-predict', status: '✅ Predicted', result: 'P(Up): 68%' },
                                     { id: 'agent-filter', status: '✅ Passed', result: 'Layers: ✓✓✓✓' },
@@ -1297,7 +1299,7 @@
                                             updateOutputs({
                                                 'out-5m': '✓ 150 bars',
                                                 'out-15m': '✓ 96 bars',
-                                                'out-1h': '✓ 48 bars',
+                                                'out-1m': '✓ 240 bars',
                                                 'out-oi': '+2.3%'
                                             });
                                             completeAgent('flow-datasync');

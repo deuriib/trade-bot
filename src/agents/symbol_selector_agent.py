@@ -90,6 +90,7 @@ class SymbolSelectorAgent:
         # Background refresh thread
         self._refresh_thread: Optional[threading.Thread] = None
         self._stop_refresh = threading.Event()
+        self.last_auto1: Dict[str, Dict] = {}
         
         log.info(
             f"🔝 SymbolSelectorAgent initialized: AUTO3 backtest ({refresh_interval_hours}h refresh) + AUTO1 momentum"
@@ -226,6 +227,15 @@ class SymbolSelectorAgent:
         if best_down["symbol"] in selected and best_down["symbol"] != best_up["symbol"]:
             is_strong = best_down in strong_downs
             log_selection("DOWN", best_down, is_strong)
+
+        self.last_auto1 = {
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            "window_minutes": window_minutes,
+            "threshold_pct": threshold_pct,
+            "volume_ratio_threshold": volume_ratio_threshold,
+            "selected": list(selected),
+            "results": {entry["symbol"]: dict(entry) for entry in results}
+        }
 
         return selected
     
