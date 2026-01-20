@@ -160,11 +160,13 @@ class SharedState:
         
         self.last_update = datetime.now().strftime("%H:%M:%S")
     
-    def init_balance(self, balance: float):
+    def init_balance(self, balance: float, initial_balance: Optional[float] = None):
         """Initialize the starting balance for tracking."""
-        self.initial_balance = balance
+        if initial_balance is None:
+            initial_balance = balance
+        self.initial_balance = initial_balance
         if self.is_test_mode:
-            self.virtual_initial_balance = balance
+            self.virtual_initial_balance = initial_balance
             self.virtual_balance = balance
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # Add initial point to balance history

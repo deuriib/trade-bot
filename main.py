@@ -3227,13 +3227,14 @@ class MultiAgentTradingBot:
         # 🧪 Test Mode: Initialize Virtual Account for Chart
         if self.test_mode:
             log.info("🧪 Test Mode: Initializing Virtual Account...")
-            initial_balance = global_state.virtual_balance
-            global_state.init_balance(initial_balance)  # Initialize balance tracking
+            initial_balance = global_state.virtual_initial_balance
+            current_balance = global_state.virtual_balance
+            global_state.init_balance(current_balance, initial_balance=initial_balance)  # Initialize balance tracking
             global_state.update_account(
-                equity=initial_balance,
-                available=initial_balance,
-                wallet=initial_balance,
-                pnl=0.0
+                equity=current_balance,
+                available=current_balance,
+                wallet=current_balance,
+                pnl=current_balance - initial_balance
             )
         
         try:

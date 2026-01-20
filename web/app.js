@@ -316,12 +316,14 @@ function updateDashboard() {
                 // Construct account object compatible with renderAccount
                 const va = data.virtual_account;
                 const unrealized = va.total_unrealized_pnl || 0;
+                const initialBalance = va.initial_balance || 0;
+                const totalEquity = va.current_balance + unrealized;
                 activeAccount = {
-                    total_equity: va.current_balance + unrealized,
+                    total_equity: totalEquity,
                     wallet_balance: va.current_balance,
                     available_balance: va.available_balance || va.current_balance,  // 可用余额 = 资金 - 持仓
-                    total_pnl: unrealized,
-                    initial_balance: va.initial_balance // ✅ Explicitly pass Initial Balance
+                    total_pnl: totalEquity - initialBalance,
+                    initial_balance: initialBalance // ✅ Explicitly pass Initial Balance
                 };
 
                 // Convert virtual positions dict to array for UI

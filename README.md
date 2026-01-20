@@ -23,7 +23,7 @@ Intelligent Multi-Agent Quantitative Trading Bot based on the **Adversarial Deci
 ## ✨ Key Features
 
 - 🕵️ **Perception First**: Unlike strict indicator-based systems, this framework prioritizes judging "IF we should trade" before deciding "HOW to trade".
-- 🤖 **15-Agent Collaboration**: 15 highly specialized Agents (3 core + 12 optional) operating independently to form an adversarial verification chain.
+- 🤖 **17-Agent Collaboration**: 17 highly specialized Agents (3 core + 14 optional) with LLM and Local variants for flexible deployment.
 - 🎛️ **Agent Configuration**: Enable/disable optional agents via Dashboard, environment variables, or config file for customized strategy.
 - 🎰 **AUTO1 Symbol Selection**: Intelligent single-symbol selection based on momentum, volume, and technical indicators.
 - 🧠 **Multi-LLM Support**: Seamlessly switch between DeepSeek, OpenAI, Claude, Qwen, and Gemini via Dashboard settings.
@@ -481,9 +481,11 @@ LLM-TradeBot/
 
 ## 🎯 Core Architecture
 
-### 15-Agent Collaborative Framework + Four-Layer Strategy
+### 17-Agent Collaborative Framework + Four-Layer Strategy
 
-The system uses a **Four-Layer Strategy Filter** architecture with **15 specialized Agents** collaborating to make trading decisions. Core agents are always enabled, while optional agents can be configured via Dashboard or `config.yaml`.
+The system uses a **Four-Layer Strategy Filter** architecture with **17 specialized Agents** collaborating to make trading decisions. Core agents are always enabled, while optional agents can be configured via Dashboard or `config.yaml`.
+
+**Key Feature**: Agents have **LLM** and **Local** variants - LLM versions use AI for semantic analysis, while Local versions use fast rule-based heuristics.
 
 #### Core Agents (Always Enabled)
 
@@ -509,12 +511,13 @@ The system uses a **Four-Layer Strategy Filter** architecture with **15 speciali
 | **📍 PositionAnalyzerAgent** | Position Tracker | Price position analysis (High/Mid/Low zone) and S/R level detection |
 | **⚡ TriggerDetectorAgent** | Entry Scanner | 5m pattern detection and trigger signal scoring |
 
-#### LLM Semantic Analysis Layer (Optional, LLM-Intensive)
+#### Semantic Analysis Layer (LLM or Local)
 
-| Agent | Role | Responsibility |
-|-------|------|----------------|
-| **📈 TrendAgent** | Trend Summarizer | Generates 1h trend semantic analysis (UPTREND/DOWNTREND) via LLM |
-| **🔥 TriggerAgent** | Trigger Analyst | Generates 5m trigger signal analysis (CONFIRMED/WAITING) via LLM |
+| Agent | LLM Version | Local Version | Responsibility |
+|-------|-------------|---------------|----------------|
+| **📈 TrendAgent** | `TrendAgentLLM` | `TrendAgent` | 1h trend semantic analysis (UPTREND/DOWNTREND) |
+| **📊 SetupAgent** | `SetupAgentLLM` | `SetupAgent` | 15m setup zone analysis (KDJ, Bollinger Bands, entry zones) |
+| **🔥 TriggerAgent** | `TriggerAgentLLM` | `TriggerAgent` | 5m trigger signal analysis (CONFIRMED/WAITING) |
 
 #### Decision & Execution Layer
 
@@ -522,11 +525,12 @@ The system uses a **Four-Layer Strategy Filter** architecture with **15 speciali
 |-------|------|----------------|
 | **⚖️ DecisionCoreAgent** | The Critic | LLM Bull/Bear debate decision engine with confidence scoring |
 | **🚀 ExecutionEngine** | The Executor | Precision order execution and state management |
-| **🪞 ReflectionAgent** | The Philosopher | Trade reflection every 10 trades, provides historical lessons to LLM |
+| **🪞 ReflectionAgent** | The Philosopher | Trade reflection every 10 trades (LLM or Local variant) |
 
 ### Agent Configuration
 
 Agents can be configured in multiple ways (priority order):
+
 1. **Dashboard Settings** → Agents tab with checkboxes for each optional agent
 2. **Environment Variables** → `AGENT_<NAME>=true/false` (e.g., `AGENT_PREDICT_AGENT=false`)
 3. **config.yaml** → `agents:` section
@@ -534,15 +538,29 @@ Agents can be configured in multiple ways (priority order):
 ```yaml
 # config.yaml example
 agents:
-  predict_agent: true          # ML probability prediction
-  ai_prediction_filter_agent: true  # AI veto mechanism
-  regime_detector_agent: true  # Market state detection
-  position_analyzer_agent: false  # Price position analysis
-  trigger_detector_agent: true  # 5m pattern detection
-  trend_agent: false           # LLM trend analysis (expensive)
-  trigger_agent: false         # LLM trigger analysis (expensive)
-  reflection_agent: true       # Trade reflection
-  symbol_selector_agent: false # AUTO symbol selection
+  # Prediction & Analysis
+  predict_agent: true              # ML probability prediction
+  ai_prediction_filter_agent: true # AI veto mechanism
+  regime_detector_agent: true      # Market state detection
+  position_analyzer_agent: false   # Price position analysis
+  trigger_detector_agent: true     # 5m pattern detection
+  
+  # Semantic Analysis - LLM variants (expensive, disabled by default)
+  trend_agent_llm: false           # 1h trend LLM analysis
+  setup_agent_llm: false           # 15m setup LLM analysis
+  trigger_agent_llm: false         # 5m trigger LLM analysis
+  
+  # Semantic Analysis - Local variants (fast, enabled by default)
+  trend_agent_local: true          # 1h trend rule-based analysis
+  setup_agent_local: true          # 15m setup rule-based analysis
+  trigger_agent_local: true        # 5m trigger rule-based analysis
+  
+  # Reflection
+  reflection_agent_llm: false      # Trade reflection via LLM
+  reflection_agent_local: true     # Trade reflection via rules
+  
+  # Symbol Selection
+  symbol_selector_agent: true      # AUTO symbol selection
 ```
 
 ### Four-Layer Strategy Filter
@@ -746,10 +764,10 @@ data/
   - **Test/Live Mode Toggle**: Quick switch with visual confirmation and safety warnings
   - **Agent Selection Panel**: Configure optional agents via Settings → Agents tab
   - **Current Symbol Display**: Shows AUTO1 selected symbol in agent framework header
-- ✅ **15-Agent Framework**: Expanded to 15 specialized agents with configurable optional agents.
+- ✅ **17-Agent Framework**: Expanded to 17 specialized agents (3 core + 14 optional) with LLM and Local variants.
   - 3 Core agents (DataSync, QuantAnalyst, RiskAudit) always enabled
-  - 9 Optional agents configurable via Dashboard/env/config
-  - Agent status visualization in flow diagram
+  - 14 Optional agents: LLM variants for AI analysis, Local variants for fast rule-based heuristics
+  - Added SetupAgent for 15m setup zone analysis (KDJ, Bollinger Bands, entry zones)
 
 **2026-01-07**:
 
