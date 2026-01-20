@@ -3431,8 +3431,10 @@ function renderTradeHistory(trades) {
         Object.entries(boxStates).forEach(([boxId, enabled]) => {
             const box = document.getElementById(boxId);
             if (box) {
-                box.style.opacity = enabled ? '1' : '0.3';
+                box.classList.toggle('hidden', !enabled);
+                box.style.opacity = enabled ? '1' : '0';
                 box.style.filter = enabled ? 'none' : 'grayscale(100%)';
+                box.style.pointerEvents = enabled ? 'auto' : 'none';
             }
         });
     }
