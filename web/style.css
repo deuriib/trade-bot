@@ -3025,14 +3025,53 @@ tr:first-child td {
     color: var(--nofx-gold);
 }
 
+.account-info-card {
+    display: flex;
+    flex-direction: column;
+}
+
+.account-summary-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.account-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
 .account-stat {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    padding: 6px 8px;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 6px;
     border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.account-stat.span-2 {
+    grid-column: 1 / -1;
+}
+
+.account-stats-grid.compact {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.account-stats-grid.compact .account-stat {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.account-stat.primary {
+    background: rgba(0, 153, 255, 0.08);
+    border-color: rgba(0, 153, 255, 0.2);
 }
 
 .account-stat.highlight {
@@ -3042,14 +3081,22 @@ tr:first-child td {
 
 .stat-label {
     color: var(--nofx-text-muted);
-    font-size: 0.85rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
 }
 
 .stat-value {
     font-family: 'IBM Plex Mono', monospace;
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 0.94rem;
     color: var(--nofx-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.account-stat.primary .stat-value,
+.account-stat.highlight .stat-value {
+    font-size: 1.02rem;
 }
 
 .stat-value.pos,
@@ -3062,6 +3109,45 @@ tr:first-child td {
     color: var(--nofx-danger);
 }
 
+.account-positions {
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.account-position-count {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+#position-details {
+    font-size: 0.78rem;
+    color: #848E9C;
+}
+
+.stat-sub {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 0.72rem;
+    color: var(--nofx-text-muted);
+}
+
+.stat-sub-label {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.stat-sub-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--nofx-text);
+}
+
 /* Responsive: Stack on smaller screens */
 @media (max-width: 1024px) {
     .row-charts-account {
@@ -3070,6 +3156,14 @@ tr:first-child td {
 
     .kline-container-wrapper {
         min-height: 200px;
+    }
+
+    .account-stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .account-stats-grid.compact {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
