@@ -213,12 +213,12 @@ function getPreferredSymbol(system, decisionMap) {
     const selector = document.getElementById('symbol-selector');
     if (selector && selector.value) return selector.value;
     if (system && system.current_symbol) return system.current_symbol;
-    if (window.lastChartSymbol) return window.lastChartSymbol;
     if (system && Array.isArray(system.symbols) && system.symbols.length > 0) {
         return system.symbols[0];
     }
     const keys = decisionMap ? Object.keys(decisionMap) : [];
-    return keys.length > 0 ? keys[0] : null;
+    if (keys.length > 0) return keys[0];
+    return window.lastChartSymbol || null;
 }
 
 function normalizeDecision(decision, system) {
@@ -288,6 +288,16 @@ function updateDashboard() {
                 updateSymbolSelector(data.system.symbols);
                 updateDecisionFilter(data.system.symbols);  // 🆕 Also update decision filter
             }
+            const selectorInfo = data.agents?.symbol_selector || {};
+            const selectorMode = (selectorInfo.mode || '').toUpperCase();
+            const selectorSymbol = selectorInfo.symbol;
+            const autoSymbol = selectorMode.startsWith('AUTO') ? selectorSymbol : null;
+            const symbolSelectorEl = document.getElementById('symbol-selector');
+            if (autoSymbol && symbolSelectorEl) {
+                if (Array.isArray(data.system?.symbols) && data.system.symbols.includes(autoSymbol)) {
+                    symbolSelectorEl.value = autoSymbol;
+                }
+            }
 
             const preferredSymbol = getPreferredSymbol(data.system, decisionMap);
             const headerSymbol = (data.system && data.system.current_symbol)
@@ -300,11 +310,12 @@ function updateDashboard() {
                     symbolDisplayText.textContent = headerSymbol;
                 }
             }
-            if (preferredSymbol
+            const chartSymbol = autoSymbol || headerSymbol || preferredSymbol;
+            if (chartSymbol
                 && typeof loadTradingViewChart === 'function'
-                && preferredSymbol !== window.lastChartSymbol) {
-                window.lastChartSymbol = preferredSymbol;
-                loadTradingViewChart(preferredSymbol);
+                && chartSymbol !== window.lastChartSymbol) {
+                window.lastChartSymbol = chartSymbol;
+                loadTradingViewChart(chartSymbol);
             }
 
             // New Renderers
