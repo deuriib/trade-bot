@@ -1135,12 +1135,19 @@ function updateAgentFramework(system, decision, agents) {
                     badge.className = 'agent-badge';
                     badge.classList.add(statusClass);
                 }
+                box.classList.toggle('flowing', statusClass === 'running');
                 return;
             }
         }
         if (box) {
             box.classList.remove('running', 'completed', 'idle', 'off');
             box.classList.add(statusClass);
+            box.classList.toggle('flowing', statusClass === 'running');
+            if (statusClass === 'completed') {
+                box.classList.remove('flow-finish');
+                void box.offsetWidth;
+                box.classList.add('flow-finish');
+            }
         }
         if (badge) {
             badge.textContent = displayStatus;
@@ -1168,6 +1175,49 @@ function updateAgentFramework(system, decision, agents) {
             return;
         }
         el.textContent = text;
+    };
+
+    const connectorMap = [
+        { id: 'particles-data', sources: ['flow-datasync', 'flow-symbol-selector'] },
+        { id: 'particles-analysis', sources: ['flow-quant', 'flow-regime', 'flow-trigger-detector', 'flow-position-analyzer', 'flow-predict'] },
+        { id: 'particles-strategy', sources: ['flow-trend-agent', 'flow-trigger-agent', 'flow-ai-filter'] },
+        { id: 'particles-decision', sources: ['flow-decision'] }
+    ];
+
+    const isActiveBox = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        return el.classList.contains('running') || el.classList.contains('completed');
+    };
+
+    const setConnectorActive = (particlesId, active) => {
+        const dot = document.getElementById(particlesId);
+        const connector = dot ? dot.closest('.flow-connector') : null;
+        if (!connector) return;
+        connector.classList.toggle('active', active);
+    };
+
+    const pulseConnector = (particlesId, delay = 0, duration = 900) => {
+        const dot = document.getElementById(particlesId);
+        const connector = dot ? dot.closest('.flow-connector') : null;
+        if (!connector) return;
+        setTimeout(() => {
+            connector.classList.remove('pulse');
+            void connector.offsetWidth;
+            connector.classList.add('pulse');
+            setTimeout(() => connector.classList.remove('pulse'), duration);
+        }, delay);
+    };
+
+    const updateFlowConnectors = () => {
+        if (!isRunningMode) {
+            connectorMap.forEach(({ id }) => setConnectorActive(id, false));
+            return;
+        }
+        connectorMap.forEach(({ id, sources }) => {
+            const active = sources.some(isActiveBox);
+            setConnectorActive(id, active);
+        });
     };
 
     const formatNumber = (value, digits = 2) => {
@@ -1360,12 +1410,16 @@ function updateAgentFramework(system, decision, agents) {
         }
         resetFramework({ forceRunning: true });
         updateSymbolSelectorCard();
+        connectorMap.forEach((connector, index) => {
+            pulseConnector(connector.id, index * 220, 900);
+        });
         window.frameworkCycleTimer = setTimeout(() => {
             if (window.lastFrameworkCycle === currentCycle && window.lastDecisionCycle !== currentCycle) {
                 resetFramework({ forceRunning: false });
             }
         }, 1000);
         if (!decisionIsCurrent) {
+            updateFlowConnectors();
             return;
         }
     }
@@ -1381,11 +1435,13 @@ function updateAgentFramework(system, decision, agents) {
             } else {
                 resetFramework({ forceRunning: false });
                 updateSymbolSelectorCard();
+                updateFlowConnectors();
                 return;
             }
         } else {
             resetFramework({ forceRunning: false });
             updateSymbolSelectorCard();
+            updateFlowConnectors();
             return;
         }
     }
@@ -1557,6 +1613,8 @@ function updateAgentFramework(system, decision, agents) {
         setAgentStatus('flow-decision', 'Idle');
         setSummary('sum-decision', t('summary.decision.pending'));
     }
+
+    updateFlowConnectors();
 
     // Risk Audit
     if (decision.guardian_passed !== undefined) {

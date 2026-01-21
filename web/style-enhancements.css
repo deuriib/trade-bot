@@ -7,19 +7,19 @@
 /* 1. 增强玻璃态效果 */
 .glass-panel {
     background: linear-gradient(135deg,
-            rgba(18, 20, 28, 0.95) 0%,
-            rgba(26, 29, 37, 0.85) 100%);
-    backdrop-filter: blur(30px) saturate(180%);
-    -webkit-backdrop-filter: blur(30px) saturate(180%);
+            rgba(5, 7, 10, 0.85) 0%,
+            rgba(14, 18, 23, 0.75) 100%);
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .glass-panel:hover {
     transform: translateY(-2px);
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(240, 185, 11, 0.35);
     box-shadow:
         0 12px 48px rgba(0, 0, 0, 0.5),
-        0 0 0 1px rgba(99, 102, 241, 0.2),
+        0 0 0 1px rgba(240, 185, 11, 0.2),
         inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
@@ -32,8 +32,8 @@ body::after {
     width: 100%;
     height: 100%;
     background-image:
-        linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+        linear-gradient(rgba(240, 185, 11, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.025) 1px, transparent 1px);
     background-size: 50px 50px;
     animation: gridMove 20s linear infinite;
     pointer-events: none;
@@ -59,7 +59,7 @@ body::after {
 
 #decision-table tbody tr:hover,
 #trade-table tbody tr:hover {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(240, 185, 11, 0.08);
 }
 
 /* 4. 按钮波纹效果 */
@@ -90,9 +90,9 @@ body::after {
 /* 5. 渐变文字效果（标题） */
 .card h2 {
     background: linear-gradient(135deg,
-            #f1f5f9 0%,
-            #6366f1 50%,
-            #8b5cf6 100%);
+            #f8f5e6 0%,
+            #f0b90b 45%,
+            #00f0ff 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -168,7 +168,7 @@ body::after {
     height: 1px;
     background: linear-gradient(90deg,
             transparent,
-            rgba(99, 102, 241, 0.5),
+            rgba(0, 240, 255, 0.45),
             transparent);
 }
 
@@ -195,7 +195,7 @@ body::after {
 
 .btn-settings-elegant:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(116, 185, 255, 0.3);
+    box-shadow: 0 6px 20px rgba(240, 185, 11, 0.25);
 }
 
 /* 10. 状态指示器改进 */
@@ -213,7 +213,7 @@ body::after {
     height: 2px;
     background: linear-gradient(90deg,
             transparent,
-            rgba(99, 102, 241, 0.5),
+            rgba(240, 185, 11, 0.45),
             transparent);
     transform: translateX(-100%);
     animation: statusScan 3s ease-in-out infinite;
@@ -260,13 +260,13 @@ body::after {
 }
 
 .table-container::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #6366f1, #8b5cf6);
+    background: linear-gradient(180deg, #f0b90b, #00f0ff);
     border-radius: 5px;
     border: 2px solid rgba(0, 0, 0, 0.2);
 }
 
 .table-container::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #8b5cf6, #6366f1);
+    background: linear-gradient(180deg, #00f0ff, #f0b90b);
 }
 
 /* 13. 输入框焦点效果 */
@@ -274,8 +274,8 @@ input:focus,
 select:focus,
 textarea:focus {
     outline: none;
-    border-color: #6366f1 !important;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
+    border-color: #f0b90b !important;
+    box-shadow: 0 0 0 3px rgba(240, 185, 11, 0.12) !important;
 }
 
 /* 14. 模态框动画 */

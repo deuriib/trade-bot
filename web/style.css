@@ -3,7 +3,7 @@
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
     /* NoFX Neo-Gold Color Palette */
@@ -64,7 +64,7 @@
     /* Premium Fonts */
     --font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', Monaco, monospace;
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-display: 'Space Grotesk', 'IBM Plex Mono', sans-serif;
+    --font-display: 'Inter', 'IBM Plex Mono', sans-serif;
 
     /* Shadows & Glow Effects */
     --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -655,6 +655,7 @@ body {
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-secondary);
+    font-family: var(--font-display);
     text-transform: uppercase;
     letter-spacing: 0.8px;
     display: flex;
@@ -2467,6 +2468,20 @@ tr:first-child td {
     height: 2px;
 }
 
+.agent-box.flowing::after {
+    opacity: 0.25;
+    background: linear-gradient(120deg, transparent 0%, rgba(0, 240, 255, 0.18) 50%, transparent 100%);
+    animation: agentStream 1.2s ease-in-out infinite;
+}
+
+.agent-box.flowing .agent-emoji {
+    animation: agentPulse 1.2s ease-in-out infinite;
+}
+
+.agent-box.flow-finish {
+    animation: agentFinish 0.8s ease-out;
+}
+
 .agent-header {
     display: flex;
     align-items: center;
@@ -2697,7 +2712,21 @@ tr:first-child td {
 }
 
 .flow-connector.active .flow-particles {
-    animation: flowParticle 0.8s ease-out forwards;
+    animation: flowParticle 0.9s ease-in-out infinite;
+}
+
+.flow-connector.active .flow-line {
+    background: linear-gradient(180deg, rgba(0, 240, 255, 0.6), rgba(240, 185, 11, 0.2));
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
+    animation: flowLinePulse 1.2s ease-in-out infinite;
+}
+
+.flow-connector.pulse .flow-particles {
+    animation: flowParticle 0.9s ease-out forwards;
+}
+
+.flow-connector.pulse .flow-line {
+    animation: flowLinePulse 0.9s ease-out;
 }
 
 @keyframes flowParticle {
@@ -2709,6 +2738,23 @@ tr:first-child td {
     100% {
         top: 100%;
         opacity: 0;
+    }
+}
+
+@keyframes flowLinePulse {
+    0% {
+        opacity: 0.4;
+        box-shadow: 0 0 0 rgba(0, 240, 255, 0);
+    }
+
+    50% {
+        opacity: 1;
+        box-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
+    }
+
+    100% {
+        opacity: 0.6;
+        box-shadow: 0 0 0 rgba(0, 240, 255, 0);
     }
 }
 
@@ -2804,6 +2850,43 @@ tr:first-child td {
 
     100% {
         transform: translateX(55%);
+    }
+}
+
+@keyframes agentStream {
+    0% {
+        transform: translateX(-120%);
+    }
+
+    100% {
+        transform: translateX(120%);
+    }
+}
+
+@keyframes agentPulse {
+    0%,
+    100% {
+        transform: scale(1);
+        filter: drop-shadow(0 0 0 rgba(0, 240, 255, 0.0));
+    }
+
+    50% {
+        transform: scale(1.08);
+        filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.4));
+    }
+}
+
+@keyframes agentFinish {
+    0% {
+        box-shadow: 0 0 0 rgba(0, 214, 143, 0);
+    }
+
+    50% {
+        box-shadow: 0 0 18px rgba(0, 214, 143, 0.4);
+    }
+
+    100% {
+        box-shadow: 0 0 0 rgba(0, 214, 143, 0);
     }
 }
 
