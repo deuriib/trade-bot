@@ -36,6 +36,31 @@ Intelligent Multi-Agent Quantitative Trading Bot based on the **Adversarial Deci
 
 ---
 
+## 🏗️ System Architecture Overview
+
+### Data Flow Architecture
+
+![Data Flow Architecture](./docs/data_flow_architecture.png)
+
+The system uses a **Multi-Layer Agent Architecture** where data flows through specialized agents:
+
+1. **📡 Data Layer**: SymbolSelectorAgent → DataSyncAgent (5m/15m/1h market data)
+2. **📊 Analysis Layer**: QuantAnalystAgent, RegimeDetectorAgent, TriggerDetectorAgent, PositionAnalyzerAgent
+3. **🔮 ML Prediction**: PredictAgent with LightGBM model
+4. **🧠 Semantic Strategy**: TrendAgent (1h) + SetupAgent (15m) + TriggerAgent (5m)
+5. **⚖️ Decision Layer**: DecisionCoreAgent with Bull vs Bear adversarial debate
+6. **🛡️ Risk Audit**: RiskAuditAgent with absolute veto power
+7. **🚀 Execution**: ExecutionEngine manages orders
+8. **🪞 Learning**: ReflectionAgent analyzes trade history for continuous improvement
+
+### Detailed Flowchart
+
+![Detailed Flowchart](./docs/detailed_flowchart.png)
+
+> 📖 **Detailed Docs**: See [Data Flow Analysis](./docs/data_flow_analysis.md) for complete mechanisms.
+
+---
+
 ## 🧪 Backtesting
 
 **Professional-grade backtesting system** for strategy validation before live trading:
@@ -583,15 +608,9 @@ Layer 4: Trigger (5m Pattern + RVOL volume confirmation)
 🚀 Execution
 ```
 
-### Data Flow Architecture
+### Data Flow Diagrams
 
-![Data Flow Architecture](./docs/data_flow_diagram_9agents.png)
-
-**Architecture Details**:
-
-#### Detailed Flowchart
-
-![9-Agent Flowchart](./docs/detailed_flowchart_9agents.png)
+> 📖 See [System Architecture Overview](#%EF%B8%8F-system-architecture-overview) section above for visual diagrams.
 
 <details>
 <summary>📐 Mermaid Diagram (Interactive)</summary>
