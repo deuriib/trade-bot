@@ -53,6 +53,28 @@ class TradingLogger:
         
         # 定义建表 SQL
         tables = {
+            "cycles": f"""
+                CREATE TABLE IF NOT EXISTS cycles (
+                    id {id_type},
+                    cycle_number INTEGER,
+                    cycle_id TEXT,
+                    timestamp_start TEXT,
+                    timestamp_end TEXT,
+                    symbols TEXT,
+                    traded BOOLEAN,
+                    trade_symbol TEXT,
+                    trade_action TEXT,
+                    trade_status TEXT,
+                    realized_pnl REAL,
+                    unrealized_pnl REAL,
+                    total_pnl REAL,
+                    cycle_realized_pnl REAL,
+                    equity REAL,
+                    balance REAL,
+                    notes TEXT
+                    {', PRIMARY KEY (id)' if self.is_postgres else ''}
+                )
+            """,
             "decisions": f"""
                 CREATE TABLE IF NOT EXISTS decisions (
                     id {id_type},
@@ -289,3 +311,38 @@ class TradingLogger:
             'win_rate': win_rate,
             'total_pnl': total_pnl
         }
+
+    def log_cycle(self, cycle_info: Dict):
+        """记录周期摘要"""
+        sql = text('''
+            INSERT INTO cycles (
+                cycle_number, cycle_id, timestamp_start, timestamp_end,
+                symbols, traded, trade_symbol, trade_action, trade_status,
+                realized_pnl, unrealized_pnl, total_pnl, cycle_realized_pnl,
+                equity, balance, notes
+            ) VALUES (
+                :cycle_number, :cycle_id, :timestamp_start, :timestamp_end,
+                :symbols, :traded, :trade_symbol, :trade_action, :trade_status,
+                :realized_pnl, :unrealized_pnl, :total_pnl, :cycle_realized_pnl,
+                :equity, :balance, :notes
+            )
+        ''')
+        with self.engine.begin() as conn:
+            conn.execute(sql, {
+                'cycle_number': cycle_info.get('cycle_number'),
+                'cycle_id': cycle_info.get('cycle_id'),
+                'timestamp_start': cycle_info.get('timestamp_start'),
+                'timestamp_end': cycle_info.get('timestamp_end'),
+                'symbols': cycle_info.get('symbols'),
+                'traded': cycle_info.get('traded'),
+                'trade_symbol': cycle_info.get('trade_symbol'),
+                'trade_action': cycle_info.get('trade_action'),
+                'trade_status': cycle_info.get('trade_status'),
+                'realized_pnl': cycle_info.get('realized_pnl'),
+                'unrealized_pnl': cycle_info.get('unrealized_pnl'),
+                'total_pnl': cycle_info.get('total_pnl'),
+                'cycle_realized_pnl': cycle_info.get('cycle_realized_pnl'),
+                'equity': cycle_info.get('equity'),
+                'balance': cycle_info.get('balance'),
+                'notes': cycle_info.get('notes')
+            })

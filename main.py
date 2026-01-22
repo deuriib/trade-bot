@@ -218,6 +218,10 @@ class MultiAgentTradingBot:
         self.selector_interval_sec = 10 * 60
         self.selector_last_run = 0.0
         self.selector_startup_done = False
+
+        # Cycle logging (DB)
+        self._cycle_logger = None
+        self._last_cycle_realized_pnl = 0.0
         
         # 交易参数
         self.max_position_size = max_position_size
@@ -2805,6 +2809,76 @@ class MultiAgentTradingBot:
         except Exception as e:
             log.error(f"Failed to get balance: {e}")
             return 0.0
+
+    def _get_cycle_logger(self):
+        if self._cycle_logger is None:
+            try:
+                from src.monitoring.logger import TradingLogger
+                self._cycle_logger = TradingLogger()
+            except Exception as e:
+                log.error(f"Cycle logger init failed: {e}")
+                self._cycle_logger = False
+        return self._cycle_logger if self._cycle_logger is not False else None
+
+    def _record_cycle_summary(
+        self,
+        cycle_number: int,
+        cycle_id: str,
+        timestamp_start: str,
+        timestamp_end: str,
+        symbols: List[str],
+        traded: bool,
+        trade_symbol: Optional[str],
+        trade_action: Optional[str],
+        trade_status: Optional[str]
+    ) -> None:
+        logger = self._get_cycle_logger()
+        if not logger:
+            return
+
+        realized_total = float(getattr(global_state, 'cumulative_realized_pnl', 0.0) or 0.0)
+        cycle_realized = realized_total - (self._last_cycle_realized_pnl or 0.0)
+        self._last_cycle_realized_pnl = realized_total
+
+        if self.test_mode:
+            unrealized = sum(
+                float(pos.get('unrealized_pnl', 0) or 0)
+                for pos in global_state.virtual_positions.values()
+            )
+            balance = float(global_state.virtual_balance or 0.0)
+            equity = balance + unrealized
+        else:
+            acc = global_state.account_overview or {}
+            balance = float(acc.get('wallet_balance') or acc.get('available_balance') or 0.0)
+            equity = float(acc.get('total_equity') or 0.0)
+            if balance and equity:
+                unrealized = equity - balance
+            else:
+                unrealized = float(acc.get('total_pnl') or 0.0)
+
+        total_pnl = realized_total + unrealized
+
+        try:
+            logger.log_cycle({
+                'cycle_number': cycle_number,
+                'cycle_id': cycle_id,
+                'timestamp_start': timestamp_start,
+                'timestamp_end': timestamp_end,
+                'symbols': ','.join(symbols) if symbols else '',
+                'traded': traded,
+                'trade_symbol': trade_symbol,
+                'trade_action': trade_action,
+                'trade_status': trade_status,
+                'realized_pnl': realized_total,
+                'unrealized_pnl': unrealized,
+                'total_pnl': total_pnl,
+                'cycle_realized_pnl': cycle_realized,
+                'equity': equity,
+                'balance': balance,
+                'notes': None
+            })
+        except Exception as e:
+            log.error(f"Cycle log insert failed: {e}")
     
     def _get_current_position(self) -> Optional[PositionInfo]:
         """获取当前持仓 (支持实盘 + Test Mode)"""
@@ -3325,6 +3399,11 @@ class MultiAgentTradingBot:
                 cycle_num = global_state.cycle_counter
                 cycle_id = f"cycle_{cycle_num:04d}_{int(time.time())}"
                 global_state.current_cycle_id = cycle_id
+                cycle_start_ts = datetime.now().isoformat()
+                cycle_traded = False
+                cycle_trade_symbol = None
+                cycle_trade_action = None
+                cycle_trade_status = None
 
                 # 🧪 Test Mode: reset per-cycle baseline for PnL display
                 if self.test_mode:
@@ -3423,6 +3502,11 @@ class MultiAgentTradingBot:
                         exec_result = asyncio.run(self.run_trading_cycle(analyze_only=False))
                         exec_action = exec_result.get('action', 'unknown')
                         exec_status = exec_result.get('status', 'unknown')
+                        if exec_action and str(exec_action).lower() not in ('hold', 'wait', 'unknown'):
+                            cycle_traded = exec_status == 'success'
+                            cycle_trade_symbol = self.current_symbol
+                            cycle_trade_action = exec_action
+                            cycle_trade_status = exec_status
                         global_state.add_log(
                             f"[🎯 SYSTEM] Executed: {self.current_symbol} {exec_action} ({exec_status})"
                         )
@@ -3456,6 +3540,19 @@ class MultiAgentTradingBot:
                         positions=positions,
                         symbols=symbols_for_cycle
                     )
+
+                # 📋 Persist cycle summary to DB
+                self._record_cycle_summary(
+                    cycle_number=cycle_num,
+                    cycle_id=cycle_id,
+                    timestamp_start=cycle_start_ts,
+                    timestamp_end=datetime.now().isoformat(),
+                    symbols=symbols_for_cycle,
+                    traded=cycle_traded,
+                    trade_symbol=cycle_trade_symbol,
+                    trade_action=cycle_trade_action,
+                    trade_status=cycle_trade_status
+                )
                 
                 # Dynamic Interval: specific to new requirement
                 current_interval = global_state.cycle_interval
