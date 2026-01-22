@@ -199,12 +199,12 @@
                                             <span class="agent-badge idle">Idle</span>
                                         </div>
                                         <div class="agent-output">
-                                            <div class="output-row"><span class="output-label" data-i18n="agent.label.5m">5m:</span><span
-                                                    class="output-value" id="out-5m">--</span></div>
-                                            <div class="output-row"><span class="output-label" data-i18n="agent.label.15m">15m:</span><span
-                                                    class="output-value" id="out-15m">--</span></div>
-                                            <div class="output-row"><span class="output-label" data-i18n="agent.label.1m">1m:</span><span
-                                                    class="output-value" id="out-1m">--</span></div>
+                                            <div class="output-row"><span class="output-label" id="label-tf-1">TF1:</span><span
+                                                    class="output-value" id="out-tf-1">--</span></div>
+                                            <div class="output-row"><span class="output-label" id="label-tf-2">TF2:</span><span
+                                                    class="output-value" id="out-tf-2">--</span></div>
+                                            <div class="output-row"><span class="output-label" id="label-tf-3">TF3:</span><span
+                                                    class="output-value" id="out-tf-3">--</span></div>
                                             <div class="output-row"><span class="output-label" data-i18n="agent.label.oi">OI:</span><span
                                                     class="output-value" id="out-oi">--</span></div>
                                         </div>
@@ -1304,9 +1304,9 @@
                                     {
                                         delay: 800, action: () => {
                                             updateOutputs({
-                                                'out-5m': '✓ 150 bars',
-                                                'out-15m': '✓ 96 bars',
-                                                'out-1m': '✓ 240 bars',
+                                                'out-tf-1': '✓ 150 bars',
+                                                'out-tf-2': '✓ 96 bars',
+                                                'out-tf-3': '✓ 240 bars',
                                                 'out-oi': '+2.3%'
                                             });
                                             completeAgent('flow-datasync');

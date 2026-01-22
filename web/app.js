@@ -75,12 +75,28 @@ function updateLanguageButton() {
     }
 }
 
+function updateDataSyncLabels(timeframes) {
+    const labels = ['label-tf-1', 'label-tf-2', 'label-tf-3'];
+    const fallback = ['5m', '15m', '1h'];
+    const resolved = Array.isArray(timeframes) && timeframes.length > 0 ? timeframes : fallback;
+    labels.forEach((id, index) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const tf = resolved[index] || `TF${index + 1}`;
+        el.textContent = `${tf}:`;
+    });
+    return resolved;
+}
+
 // Chart Instance
 let equityChart = null;
 let realtimeBalanceHistory = [];
 let lastCycleCounter = null;
 let curveBaselineBalance = null;
+let curveBaselineTime = null;
 let curveBaselineLabelKey = 'chart.initial';
+let balanceSessionKey = null;
+const BASELINE_STORAGE_PREFIX = 'rtBalanceBaseline:';
 
 const CHART_COLORS = {
     pos: { line: '#00ff9d', fillTop: 'rgba(0, 255, 157, 0.35)', fillBottom: 'rgba(0, 255, 157, 0.02)' },
@@ -118,6 +134,36 @@ function formatTimestamp(date = new Date()) {
     const minutes = pad(date.getMinutes());
     const seconds = pad(date.getSeconds());
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function getBalanceSessionKey(system) {
+    if (!system) return null;
+    const key = system.uptime_start || system.current_cycle_id || '';
+    return key ? `session:${key}` : null;
+}
+
+function loadBaselineFromStorage(sessionKey) {
+    if (!sessionKey) return null;
+    try {
+        const raw = localStorage.getItem(`${BASELINE_STORAGE_PREFIX}${sessionKey}`);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        if (!Number.isFinite(parsed.balance)) return null;
+        if (!parsed.time || typeof parsed.time !== 'string') return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
+function saveBaselineToStorage(sessionKey, baseline) {
+    if (!sessionKey || !baseline) return;
+    try {
+        localStorage.setItem(`${BASELINE_STORAGE_PREFIX}${sessionKey}`, JSON.stringify(baseline));
+    } catch {
+        // Ignore storage failures
+    }
 }
 
 function initChart() {
@@ -379,6 +425,24 @@ function updateDashboard() {
             // 🆕 Update Agent Framework Visualization
             if (data.system) {
                 updateAgentFramework(data.system, currentDecision, data.agents);
+                if (Array.isArray(data.system.timeframes) && data.system.timeframes.length > 0) {
+                    window.strategyTimeframes = data.system.timeframes;
+                }
+                const sessionKey = getBalanceSessionKey(data.system);
+                if (sessionKey && sessionKey !== balanceSessionKey) {
+                    balanceSessionKey = sessionKey;
+                    realtimeBalanceHistory = [];
+                    lastCycleCounter = null;
+                    curveBaselineBalance = null;
+                    curveBaselineTime = null;
+                    curveBaselineLabelKey = 'chart.initial';
+                    const stored = loadBaselineFromStorage(balanceSessionKey);
+                    if (stored) {
+                        curveBaselineBalance = stored.balance;
+                        curveBaselineTime = stored.time;
+                        curveBaselineLabelKey = stored.labelKey || 'chart.cycle_start';
+                    }
+                }
             }
 
             // 🆕 Update K-Line symbol selector with active trading symbols
@@ -425,6 +489,8 @@ function updateDashboard() {
                 console.log(`📈 Chart Update: ${window.lastChartSymbol || 'none'} → ${chartSymbol}`);
                 loadTradingViewChart(chartSymbol);
             }
+
+            updateDataSyncLabels(window.strategyTimeframes);
 
             // New Renderers
             // Account & Positions Logic
@@ -500,24 +566,35 @@ function updateDashboard() {
                 if (lastCycleCounter !== null && cycleCounter < lastCycleCounter) {
                     realtimeBalanceHistory = [];
                     curveBaselineBalance = null;
+                    curveBaselineTime = null;
                     curveBaselineLabelKey = 'chart.initial';
                 }
 
                 if (cycleCounter === 1 && lastCycleCounter !== 1) {
                     realtimeBalanceHistory = [];
                     curveBaselineBalance = null;
+                    curveBaselineTime = null;
                     curveBaselineLabelKey = 'chart.cycle_start';
                 }
 
                 if (cycleCounter === 1 && curveBaselineBalance === null && balanceSnapshot) {
                     curveBaselineBalance = balanceSnapshot.realtimeBalance;
-                    realtimeBalanceHistory.push({
-                        time: formatTimestamp(),
-                        value: balanceSnapshot.realtimeBalance
+                    curveBaselineTime = formatTimestamp();
+                    saveBaselineToStorage(balanceSessionKey, {
+                        balance: curveBaselineBalance,
+                        time: curveBaselineTime,
+                        labelKey: curveBaselineLabelKey
                     });
                 }
 
                 lastCycleCounter = cycleCounter;
+            }
+
+            if (!realtimeBalanceHistory.length && curveBaselineBalance !== null && curveBaselineTime) {
+                realtimeBalanceHistory.push({
+                    time: curveBaselineTime,
+                    value: curveBaselineBalance
+                });
             }
 
             if (balanceSnapshot) {
@@ -1818,7 +1895,7 @@ function updateAgentFramework(system, decision, agents) {
     const resetFramework = (options = {}) => {
         const { forceRunning = false } = options;
         const outputIds = [
-            'out-5m', 'out-15m', 'out-1m', 'out-oi',
+            'out-tf-1', 'out-tf-2', 'out-tf-3', 'out-oi',
             'out-selector-mode', 'out-selector-symbol', 'out-selector-bias', 'out-selector-score',
             'out-ema', 'out-rsi', 'out-macd', 'out-bb',
             'out-regime', 'out-adx', 'out-regime-conf',
@@ -2041,9 +2118,9 @@ function updateAgentFramework(system, decision, agents) {
     if (isRunningMode) {
         setAgentStatus('flow-datasync', 'Done');
         // Update data outputs if available
-        setOutput('out-5m', '✓');
-        setOutput('out-15m', '✓');
-        setOutput('out-1m', '✓');
+        setOutput('out-tf-1', '✓');
+        setOutput('out-tf-2', '✓');
+        setOutput('out-tf-3', '✓');
         const oiChange = decision.four_layer_status?.oi_change ?? decision.vote_details?.oi_fuel?.oi_change_24h;
         setOutput('out-oi', oiChange !== undefined && oiChange !== null ? `${formatNumber(oiChange, 1)}%` : '✓');
     }
@@ -2051,7 +2128,8 @@ function updateAgentFramework(system, decision, agents) {
     let dataSummary = 'Feed idle.';
     if (isRunningMode) {
         const oiPart = oiSummary !== undefined && oiSummary !== null ? ` | OI ${formatNumber(oiSummary, 1)}%` : '';
-        dataSummary = `Feed 1/5/15${oiPart}.`;
+        const tfs = updateDataSyncLabels(window.strategyTimeframes);
+        dataSummary = `Feed ${tfs.join('/')}${oiPart}.`;
     } else if (isPausedMode) {
         dataSummary = 'Feed paused.';
     } else if (isStoppedMode) {

@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import secrets
 from typing import Optional, Dict, List
+from pathlib import Path
+import yaml
 
 from src.server.state import global_state
 
@@ -131,6 +133,26 @@ async def check_auth_status(request: Request):
 async def get_status(authenticated: bool = Depends(verify_auth)):
     import time
     import re
+
+    def _get_strategy_timeframes():
+        try:
+            config_path = Path(__file__).resolve().parents[2] / 'config' / 'data_alignment.yaml'
+            if not config_path.exists():
+                return ['5m', '15m', '1h']
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = yaml.safe_load(f) or {}
+            mode = cfg.get('mode', 'backtest')
+            tf_map = (cfg.get(mode, {}) or {}).get('timeframes', {}) or {}
+            timeframes = list(tf_map.keys())
+            if timeframes:
+                return timeframes
+            fallback_map = cfg.get('timeframe_settings', {}) or {}
+            timeframes = list(fallback_map.keys())
+            return timeframes if timeframes else ['5m', '15m', '1h']
+        except Exception:
+            return ['5m', '15m', '1h']
+
+    timeframes = _get_strategy_timeframes()
     
     # Check and update demo expiration status
     if global_state.demo_mode_active and global_state.demo_start_time:
@@ -247,6 +269,7 @@ async def get_status(authenticated: bool = Depends(verify_auth)):
             "uptime_start": global_state.start_time,
             "last_heartbeat": global_state.last_update,
             "symbols": global_state.symbols,  # 🆕 Active trading symbols (AI500 Top5 support)
+            "timeframes": timeframes,
             "current_symbol": getattr(global_state, 'current_symbol', '')
         },
         "demo": {
