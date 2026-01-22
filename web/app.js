@@ -51,7 +51,7 @@ function updateChartLabels() {
     if (equityChart.data.datasets[1]) {
         equityChart.data.datasets[1].label = isPnl
             ? getI18n('chart.break_even', 'Break-even')
-            : getI18n('chart.initial', 'Initial Balance');
+            : getI18n(curveBaselineLabelKey || 'chart.initial', 'Initial Balance');
     }
     equityChart.update('none');
 }
@@ -495,6 +495,31 @@ function updateDashboard() {
                 initialAmount = activeAccount.wallet_balance;
             }
 
+            const cycleCounter = Number(data.system?.cycle_counter ?? NaN);
+            if (Number.isFinite(cycleCounter)) {
+                if (lastCycleCounter !== null && cycleCounter < lastCycleCounter) {
+                    realtimeBalanceHistory = [];
+                    curveBaselineBalance = null;
+                    curveBaselineLabelKey = 'chart.initial';
+                }
+
+                if (cycleCounter === 1 && lastCycleCounter !== 1) {
+                    realtimeBalanceHistory = [];
+                    curveBaselineBalance = null;
+                    curveBaselineLabelKey = 'chart.cycle_start';
+                }
+
+                if (cycleCounter === 1 && curveBaselineBalance === null && balanceSnapshot) {
+                    curveBaselineBalance = balanceSnapshot.realtimeBalance;
+                    realtimeBalanceHistory.push({
+                        time: formatTimestamp(),
+                        value: balanceSnapshot.realtimeBalance
+                    });
+                }
+
+                lastCycleCounter = cycleCounter;
+            }
+
             if (balanceSnapshot) {
                 const point = {
                     time: formatTimestamp(),
@@ -513,7 +538,8 @@ function updateDashboard() {
                 : (data.chart_data && data.chart_data.equity ? data.chart_data.equity : null);
 
             if (curveData) {
-                renderChart(curveData, balanceSnapshot?.initial ?? initialAmount);
+                const baseline = curveBaselineBalance ?? balanceSnapshot?.initial ?? initialAmount;
+                renderChart(curveData, baseline);
             }
 
             // Layout v2 Renderers with Filtering
@@ -978,16 +1004,16 @@ function updateRealtimeBalance({ account, system, virtualAccount, chartData, pos
         return null;
     }
     const { initial, realized, unrealized, realtimeBalance } = snapshot;
+    const displayInitial = Number.isFinite(curveBaselineBalance) ? curveBaselineBalance : initial;
+    const pnlAmount = realtimeBalance - displayInitial;
 
     setTxt('account-realtime-balance', fmt(realtimeBalance));
-    setTxt('account-realtime-initial', fmt(initial));
+    setTxt('account-realtime-initial', fmt(displayInitial));
     setTxt('account-realtime-realized', fmt(realized));
     setTxt('account-realtime-unrealized', fmt(unrealized));
     setPnlClass('account-realtime-realized', realized);
     setPnlClass('account-realtime-unrealized', unrealized);
-    setPnlClass('account-realtime-balance', realtimeBalance - initial);
-
-    const pnlAmount = snapshot.totalPnl;
+    setPnlClass('account-realtime-balance', pnlAmount);
     const pnlElement = document.getElementById('acc-pnl');
     if (pnlElement) {
         pnlElement.textContent = fmt(pnlAmount);
@@ -1002,8 +1028,8 @@ function updateRealtimeBalance({ account, system, virtualAccount, chartData, pos
     }
 
     const pnlPctElement = document.getElementById('account-total-pnl-pct');
-    if (pnlPctElement && initial > 0) {
-        const pnlPct = (pnlAmount / initial) * 100;
+    if (pnlPctElement && displayInitial > 0) {
+        const pnlPct = (pnlAmount / displayInitial) * 100;
         pnlPctElement.textContent = `${pnlPct.toFixed(2)}%`;
         pnlPctElement.classList.remove('pos', 'neg', 'neutral');
         if (pnlPct > 0) {
@@ -1082,7 +1108,7 @@ function renderChart(history, initialAmount = null) {
         equityChart.data.datasets.push({
             label: isPnl
                 ? getI18n('chart.break_even', 'Break-even')
-                : getI18n('chart.initial', 'Initial Balance'),
+                : getI18n(curveBaselineLabelKey || 'chart.initial', 'Initial Balance'),
             data: baselineData,
             borderColor: 'rgba(255, 255, 255, 0.3)', // Faint white
             borderWidth: 1,
@@ -1094,7 +1120,7 @@ function renderChart(history, initialAmount = null) {
     } else {
         equityChart.data.datasets[1].label = isPnl
             ? getI18n('chart.break_even', 'Break-even')
-            : getI18n('chart.initial', 'Initial Balance');
+            : getI18n(curveBaselineLabelKey || 'chart.initial', 'Initial Balance');
         equityChart.data.datasets[1].data = baselineData;
     }
     // ------------------------------------------

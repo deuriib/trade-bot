@@ -25,6 +25,7 @@ const i18n = {
 
         // Net Value Chart
         'chart.initial': 'Initial Balance',
+        'chart.cycle_start': 'Cycle Start Balance',
         'chart.current': 'Current Funds',
         'chart.available': 'Available',
         'chart.profit': 'Total Profit',
@@ -379,6 +380,7 @@ const i18n = {
 
         // Net Value Chart
         'chart.initial': '初始余额',
+        'chart.cycle_start': '周期起始余额',
         'chart.current': '当前资金',
         'chart.available': '可用余额',
         'chart.profit': '总盈亏',
