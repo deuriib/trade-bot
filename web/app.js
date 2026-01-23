@@ -250,33 +250,16 @@ function initChart() {
             scales: {
                 x: {
                     grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    min: 1,  // 🔧 X-axis always starts from cycle 1
                     ticks: {
                         color: '#94a3b8',
                         maxRotation: 0,
                         minRotation: 0,
-                        autoSkip: false,
+                        autoSkip: true,
+                        maxTicksLimit: 10,  // Limit to prevent crowding
                         callback: function (value, index, ticks) {
-                            const totalLabels = ticks.length;
-
-                            // Always show first label
-                            if (index === 0) return extractTimeLabel(this.getLabelForValue(value));
-
-                            // Always show last label
-                            if (index === totalLabels - 1) return extractTimeLabel(this.getLabelForValue(value));
-
-                            // Calculate interval based on total labels
-                            let interval;
-                            if (totalLabels <= 10) interval = 1;
-                            else if (totalLabels <= 30) interval = 3;
-                            else if (totalLabels <= 60) interval = 5;
-                            else if (totalLabels <= 120) interval = 10;
-                            else interval = 20;
-
-                            if (index % interval === 0) {
-                                return extractTimeLabel(this.getLabelForValue(value));
-                            }
-
-                            return '';
+                            // 🔧 Display cycle number directly
+                            return value;
                         }
                     }
                 },
@@ -1272,7 +1255,9 @@ function renderChart(history, initialAmount = null) {
     // Use all history data - including cycle 0 (startup)
     const dataToShow = history;
 
-    const times = dataToShow.map(h => h.time);
+    // 🔧 Use cycle index (1..N) instead of timestamps for X-axis
+    // This ensures X-axis always starts from 1 and doesn't drift
+    const times = dataToShow.map((h, index) => index + 1);  // Cycle 1, 2, 3, ...
     const rawValues = dataToShow.map(h => h.value);
 
     // Determine Initial Amount (Baseline)
@@ -1322,6 +1307,11 @@ function renderChart(history, initialAmount = null) {
         equityChart.data.datasets[1].data = baselineData;
     }
     // ------------------------------------------
+
+    // --- 🔧 X-Axis: Fixed minimum at 1, prevent drift ---
+    equityChart.options.scales.x.min = 1;
+    // Max is the last cycle index or at least 10 for empty chart
+    equityChart.options.scales.x.max = Math.max(times.length, 10);
 
     // --- Axis Centering Logic ---
     if (values.length > 0) {
