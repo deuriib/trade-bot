@@ -143,6 +143,14 @@ Shorts carry squeeze risk. Apply stricter filters to avoid counter-trend traps:
 - All 3 timeframes pointing different ways
 - RSI extreme on 1h (>80 or <20) suggesting reversal
 
+## ⏱️ Position Exit Rules (Time + Loss Control)
+
+- **Immediate Cut**: If unrealized PnL ≤ **-5%** → output `close_position` immediately.
+- **Stale Loser Exit**: If holding **> 6 hours** and PnL < **-1%** → close to prevent drift loss.
+- **Capital Tie-up Exit**: If holding **> 12 hours** and PnL ≤ **+0.3%** → close and redeploy capital.
+- **Hard Cap**: If holding exceeds the system hard limit (cycles/hour cap) → close regardless of signals.
+- **Never ignore** time-based exits just because signals are mixed; risk control has priority.
+
 ## 🔍 Input Data Interpretation Guide
 
 The following explains each indicator and its relationship to price movement:
