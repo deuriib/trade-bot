@@ -106,6 +106,67 @@ class DataSaver:
         self.dirs['agent_context'] = self.dirs['analytics']
         self.dirs['executions'] = self.dirs['orders']
         self.dirs['features'] = self.dirs['analytics']  # features合并到analytics
+    
+    def clear_live_data(self) -> int:
+        """清除 data/live 下所有历史数据（每次启动新周期时调用）
+        
+        清除范围:
+        - agents/     (所有Agent日志)
+        - analytics/  (分析数据)
+        - execution/  (交易执行日志，包括 all_trades.csv)
+        - market_data/(市场数据)
+        - oi_history/ (持仓历史)
+        - risk/       (风控审计)
+        
+        不受影响:
+        - data/kline/    (K线缓存，共享数据)
+        - data/backtest/ (回测数据)
+        
+        Returns:
+            int: 删除的文件数量
+        """
+        live_dir = os.path.join(self.base_dir, 'live')
+        if not os.path.exists(live_dir):
+            log.info("📁 data/live 目录不存在，跳过清理")
+            return 0
+        
+        files_deleted = 0
+        dirs_cleaned = []
+        
+        # 遍历 live 目录下的所有子目录
+        for subdir in os.listdir(live_dir):
+            subdir_path = os.path.join(live_dir, subdir)
+            if not os.path.isdir(subdir_path):
+                continue
+            
+            # 递归删除目录内容，但保留目录本身
+            for root, dirs, files in os.walk(subdir_path, topdown=False):
+                # 删除文件
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    try:
+                        os.remove(file_path)
+                        files_deleted += 1
+                    except Exception as e:
+                        log.warning(f"无法删除文件 {file_path}: {e}")
+                
+                # 删除空子目录（保留顶级子目录）
+                for d in dirs:
+                    dir_path = os.path.join(root, d)
+                    try:
+                        if os.path.isdir(dir_path) and not os.listdir(dir_path):
+                            os.rmdir(dir_path)
+                    except Exception as e:
+                        log.warning(f"无法删除目录 {dir_path}: {e}")
+            
+            dirs_cleaned.append(subdir)
+        
+        if files_deleted > 0:
+            log.info(f"🧹 清理完成: 删除 {files_deleted} 个历史文件 ({', '.join(dirs_cleaned)})")
+        else:
+            log.info("🧹 data/live 目录已为空，无需清理")
+        
+        return files_deleted
             
     def _get_date_folder(self, category: str, symbol: Optional[str] = None, date: Optional[str] = None) -> str:
         """获取或创建指定类别的日期文件夹 (支持按币种嵌套)"""

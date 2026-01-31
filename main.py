@@ -236,6 +236,9 @@ class MultiAgentTradingBot:
         self.risk_manager = RiskManager()
         self.execution_engine = ExecutionEngine(self.client, self.risk_manager)
         self.saver = DataSaver() # ✅ 初始化 Multi-Agent 数据保存器
+        
+        # 🧹 启动时清除历史实盘数据，只保留当前周期
+        self.saver.clear_live_data()
 
         # 💰 Persistent Virtual Account (Test Mode)
         if self.test_mode:

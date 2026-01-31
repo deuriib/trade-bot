@@ -1072,13 +1072,23 @@ function computeRealtimeBalance({ account, system, virtualAccount, chartData, po
     if (hasVirtual) {
         const rawInitial = Number(virtualAccount.initial_balance ?? 1000);
         initial = Number.isFinite(rawInitial) && rawInitial > 0 ? rawInitial : 1000;
+
+        // 🔧 FIX: current_balance 已经包含了已实现 PnL（平仓时 virtual_balance += pnl）
+        // 所以 realized 应该从 current_balance - initial 推算，而不是重复累加
+        const currentBalance = Number(virtualAccount.current_balance ?? initial);
+
+        // 从交易记录计算已实现 PnL（用于显示，不参与余额计算）
         realized = useTrades ? sumRealizedFromTrades(trades) : (Number(virtualAccount.cumulative_realized_pnl ?? 0) || 0);
+
         unrealized = sumUnrealizedFromPositions(positions);
         if (unrealized === 0) {
             unrealized = Number(virtualAccount.total_unrealized_pnl ?? 0) || 0;
         }
-        totalPnl = realized + unrealized;
-        realtimeBalance = initial + totalPnl;
+
+        // 🔧 FIX: realtimeBalance = current_balance + unrealized（避免重复计算 realized）
+        // totalPnl 从 realtimeBalance 反推，而不是正向加
+        realtimeBalance = currentBalance + unrealized;
+        totalPnl = realtimeBalance - initial;
     } else if (hasAccount) {
         const rawInitial = Number(account.initial_balance ?? chartData?.initial_balance ?? 0);
         initial = Number.isFinite(rawInitial) && rawInitial > 0 ? rawInitial : 1000;
@@ -1180,10 +1190,10 @@ function updateRealtimeBalance({ account, system, virtualAccount, chartData, pos
         }
     }
 
-    if (snapshot.source === 'trades') {
-        setTxt('acc-equity', fmt(currentBalanceDisplay));
-        setTxt('header-equity', fmt(currentBalanceDisplay));
-    }
+
+    // ✅ 始终同步 EQUITY 和 Current Balance，确保两者一致
+    setTxt('acc-equity', fmt(currentBalanceDisplay));
+    setTxt('header-equity', fmt(currentBalanceDisplay));
 
     const pnlPctElement = document.getElementById('account-total-pnl-pct');
     if (pnlPctElement && displayInitial > 0) {
