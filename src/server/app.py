@@ -4,7 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import secrets
-from typing import Optional, Dict, List
+import json
+from typing import Optional, Dict, List, Any
 from pathlib import Path
 import yaml
 
@@ -36,6 +37,7 @@ app.add_middleware(
 # Get absolute path to the web directory
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WEB_DIR = os.path.join(BASE_DIR, 'web')
+AGENT_SETTINGS_PATH = Path(BASE_DIR) / "config" / "agent_settings.json"
 
 # Authentication Configuration
 WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "EthanAlgoX")  # Admin password
@@ -504,6 +506,62 @@ async def upload_prompt(file: UploadFile = File(...), authenticated: bool = Depe
 from src.server.config_manager import ConfigManager
 config_manager = ConfigManager(BASE_DIR)
 
+def _normalize_agent_settings(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(data, dict):
+        return {"agents": {}}
+    agents = data.get("agents", {})
+    if not isinstance(agents, dict):
+        agents = {}
+    normalized: Dict[str, Any] = {}
+    for key, value in agents.items():
+        if not isinstance(value, dict):
+            continue
+        params = value.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        system_prompt = value.get("system_prompt", "")
+        if system_prompt is None:
+            system_prompt = ""
+        normalized[key] = {
+            "params": params,
+            "system_prompt": str(system_prompt)
+        }
+    return {"agents": normalized}
+
+def _load_agent_settings() -> Dict[str, Any]:
+    cached = getattr(global_state, "agent_settings", None)
+    if isinstance(cached, dict):
+        return cached
+    if AGENT_SETTINGS_PATH.exists():
+        try:
+            with open(AGENT_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            normalized = _normalize_agent_settings(data)
+            global_state.agent_settings = normalized
+            global_state.agent_prompts = {
+                key: value.get("system_prompt", "")
+                for key, value in normalized.get("agents", {}).items()
+            }
+            return normalized
+        except Exception:
+            pass
+    empty = {"agents": {}}
+    global_state.agent_settings = empty
+    global_state.agent_prompts = {}
+    return empty
+
+def _save_agent_settings(data: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = _normalize_agent_settings(data)
+    AGENT_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(AGENT_SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(normalized, f, indent=2, ensure_ascii=False)
+    global_state.agent_settings = normalized
+    global_state.agent_prompts = {
+        key: value.get("system_prompt", "")
+        for key, value in normalized.get("agents", {}).items()
+    }
+    return normalized
+
 @app.get("/api/config")
 async def get_config(authenticated: bool = Depends(verify_auth)):
     """Get current configuration (masked)"""
@@ -576,9 +634,32 @@ async def get_agent_config(authenticated: bool = Depends(verify_auth)):
 @app.get("/api/agents/prompts")
 async def get_agent_prompts(authenticated: bool = Depends(verify_auth)):
     """Get current LLM configuration and agent system prompts"""
+    settings = _load_agent_settings()
     return {
         "llm_info": global_state.llm_info,
-        "agent_prompts": global_state.agent_prompts
+        "agent_prompts": global_state.agent_prompts,
+        "agent_settings": settings.get("agents", {})
+    }
+
+@app.get("/api/agents/settings")
+async def get_agent_settings(authenticated: bool = Depends(verify_auth)):
+    """Get agent configuration parameters and system prompts"""
+    settings = _load_agent_settings()
+    return {
+        "llm_info": global_state.llm_info,
+        "agents": settings.get("agents", {})
+    }
+
+@app.post("/api/agents/settings")
+async def update_agent_settings(data: dict = Body(...), authenticated: bool = Depends(verify_admin)):
+    """Update agent configuration parameters and system prompts"""
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    settings = _save_agent_settings(data)
+    global_state.add_log("🧩 Agent settings updated")
+    return {
+        "status": "success",
+        "agents": settings.get("agents", {})
     }
 
 @app.post("/api/config/prompt")

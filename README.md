@@ -18,6 +18,13 @@ Intelligent Multi-Agent Quantitative Trading Bot based on the **Adversarial Deci
 **Experience the bot immediately through our web interface:**
 **[👉 Live Dashboard](https://llm-tradebot.up.railway.app/)**
 
+### Dashboard Highlights
+
+- **LLM toggle** stays off by default; turning it on prompts for an API key.
+- **Agent Chatroom** shows per-cycle agent outputs and the final Decision Core action.
+- **Real-time Balance Curve** uses a fixed initial balance and PnL-driven current balance.
+- **Agent Config** lets you edit per-agent parameters and (if applicable) system prompts.
+
 ---
 
 ## ✨ Key Features
@@ -25,6 +32,8 @@ Intelligent Multi-Agent Quantitative Trading Bot based on the **Adversarial Deci
 - 🕵️ **Perception First**: Unlike strict indicator-based systems, this framework prioritizes judging "IF we should trade" before deciding "HOW to trade".
 - 🤖 **17-Agent Collaboration**: 17 highly specialized Agents (3 core + 14 optional) with LLM and Local variants for flexible deployment.
 - 🎛️ **Agent Configuration**: Enable/disable optional agents via Dashboard, environment variables, or config file for customized strategy.
+- 💬 **Agent Chatroom**: Chat-style multi-agent outputs per cycle, with Decision Core final decisioning.
+- 🧩 **Agent Config Tabs**: Configure per-agent parameters and optional system prompts directly in the Dashboard.
 - 🎰 **AUTO1 Symbol Selection**: Intelligent single-symbol selection based on momentum, volume, and technical indicators.
 - 🧠 **Multi-LLM Support**: Seamlessly switch between DeepSeek, OpenAI, Claude, Qwen, and Gemini via Dashboard settings.
 - 📊 **Multi-Account Trading**: Manage multiple exchange accounts with unified API abstraction (currently Binance, extensible).

@@ -4596,21 +4596,38 @@ function renderTradeHistory(trades) {
 })();
 
 // ========================================
-// LLM Config & Prompts Display Logic
+// Agent Configuration Modal
 // ========================================
 (function () {
     const btnViewPrompts = document.getElementById('btn-view-prompts');
     const promptsModal = document.getElementById('prompts-modal');
     const closePrompts = document.getElementById('close-prompts');
-    const promptsContainer = document.getElementById('prompts-container');
+    const tabsContainer = document.getElementById('agent-config-tabs');
+    const panelContainer = document.getElementById('agent-config-panel');
+    const saveBtn = document.getElementById('agent-config-save');
     const llmInfoBadge = document.getElementById('llm-info-badge');
     const llmProviderText = document.getElementById('llm-provider-text');
     const llmModelText = document.getElementById('llm-model-text');
 
+    const AGENT_DEFS = [
+        { id: 'symbol_selector', label: '🎯 Symbol Selector', hasPrompt: true },
+        { id: 'trend_agent', label: '📊 Trend Agent (1h)', hasPrompt: true },
+        { id: 'setup_agent', label: '📉 Setup Agent (15m)', hasPrompt: true },
+        { id: 'trigger_agent', label: '⚡ Trigger Agent (5m)', hasPrompt: true },
+        { id: 'multi_period', label: '🧭 Multi-Period Parser', hasPrompt: false },
+        { id: 'reflection_agent', label: '🧠 Reflection Agent', hasPrompt: true },
+        { id: 'risk_audit', label: '🛡️ Risk Audit', hasPrompt: false },
+        { id: 'decision_core', label: '⚖️ Decision Core', hasPrompt: true }
+    ];
+
+    let agentSettings = { agents: {} };
+    let draftInputs = {};
+    let activeAgentId = AGENT_DEFS[0]?.id || null;
+
     if (btnViewPrompts) {
         btnViewPrompts.addEventListener('click', async function () {
             promptsModal.style.display = 'flex';
-            await loadAgentPrompts();
+            await loadAgentSettings();
         });
     }
 
@@ -4627,121 +4644,169 @@ function renderTradeHistory(trades) {
         }
     });
 
-    async function loadAgentPrompts() {
-        try {
-            promptsContainer.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">Fetching agent prompts...</p>';
-            const response = await apiFetch('/api/agents/prompts');
-            const data = await response.json();
-
-            if (data && data.agent_prompts) {
-                renderPrompts(data.agent_prompts);
-            } else {
-                promptsContainer.innerHTML = '<p style="color: #ff5b5b; text-align: center; padding: 20px;">No prompts found.</p>';
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async function () {
+            try {
+                stashDraft(activeAgentId);
+                const payload = buildSettingsPayload();
+                saveBtn.disabled = true;
+                await apiFetch('/api/agents/settings', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                agentSettings = payload;
+                alert('Agent settings saved.');
+            } catch (err) {
+                console.error('Failed to save agent settings:', err);
+                alert(`Failed to save agent settings: ${err.message}`);
+            } finally {
+                saveBtn.disabled = false;
             }
+        });
+    }
+
+    async function loadAgentSettings() {
+        if (!panelContainer || !tabsContainer) return;
+        panelContainer.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">Loading agent settings...</p>';
+        try {
+            const response = await apiFetch('/api/agents/settings');
+            const data = await response.json();
+            agentSettings = normalizeSettings(data);
+            renderAgentTabs();
+            renderAgentPanel(activeAgentId);
+            updateLlmBadge(data?.llm_info);
         } catch (err) {
-            console.error('Failed to load agent prompts:', err);
-            promptsContainer.innerHTML = `<p style="color: #ff5b5b; text-align: center; padding: 20px;">Error: ${err.message}</p>`;
+            console.error('Failed to load agent settings:', err);
+            panelContainer.innerHTML = `<p style="color: #ff5b5b; text-align: center; padding: 20px;">Error: ${err.message}</p>`;
         }
     }
 
-    function renderPrompts(prompts) {
-        promptsContainer.innerHTML = '';
+    function normalizeSettings(data) {
+        const agents = data && data.agents && typeof data.agents === 'object' ? data.agents : {};
+        const normalized = {};
+        Object.entries(agents).forEach(([key, value]) => {
+            if (!value || typeof value !== 'object') return;
+            normalized[key] = {
+                params: value.params && typeof value.params === 'object' ? value.params : {},
+                system_prompt: typeof value.system_prompt === 'string' ? value.system_prompt : ''
+            };
+        });
+        return { agents: normalized };
+    }
 
-        const agentNames = {
-            'decision_core': '⚖️ Decision Core (StrategyEngine)',
-            'trend_agent': '📊 Trend Agent (1h Trend)',
-            'setup_agent': '📉 Setup Agent (15m Entry)',
-            'trigger_agent': '⚡ Trigger Agent (5m Trigger)',
-            'reflection_agent': '🧠 Reflection Agent (Retrospection)'
+    function ensureAgentConfig(agentId) {
+        if (!agentSettings.agents[agentId]) {
+            agentSettings.agents[agentId] = { params: {}, system_prompt: '' };
+        }
+    }
+
+    function renderAgentTabs() {
+        tabsContainer.innerHTML = '';
+        AGENT_DEFS.forEach(def => {
+            const btn = document.createElement('button');
+            btn.className = `agent-config-tab${def.id === activeAgentId ? ' active' : ''}`;
+            btn.textContent = def.label;
+            btn.addEventListener('click', () => {
+                if (def.id === activeAgentId) return;
+                stashDraft(activeAgentId);
+                activeAgentId = def.id;
+                renderAgentTabs();
+                renderAgentPanel(activeAgentId);
+            });
+            tabsContainer.appendChild(btn);
+        });
+    }
+
+    function renderAgentPanel(agentId) {
+        if (!agentId) return;
+        ensureAgentConfig(agentId);
+        const def = AGENT_DEFS.find(item => item.id === agentId);
+        const draft = draftInputs[agentId];
+        const paramsText = draft?.paramsText ?? JSON.stringify(agentSettings.agents[agentId].params || {}, null, 2);
+        const promptText = draft?.promptText ?? (agentSettings.agents[agentId].system_prompt || '');
+
+        panelContainer.innerHTML = `
+            <div class="agent-config-section">
+                <h4>${def?.label || agentId}</h4>
+                <div class="agent-config-row">
+                    <label>Parameters (JSON)</label>
+                    <textarea data-field="params" rows="10" spellcheck="false"></textarea>
+                </div>
+                ${def?.hasPrompt ? `
+                <div class="agent-config-row">
+                    <label>System Prompt (applies only when LLM is enabled)</label>
+                    <textarea data-field="system_prompt" rows="6" spellcheck="false"></textarea>
+                </div>` : ''}
+            </div>
+        `;
+
+        const paramsEl = panelContainer.querySelector('textarea[data-field="params"]');
+        if (paramsEl) paramsEl.value = paramsText;
+        const promptEl = panelContainer.querySelector('textarea[data-field="system_prompt"]');
+        if (promptEl) promptEl.value = promptText;
+    }
+
+    function stashDraft(agentId) {
+        if (!agentId) return;
+        const paramsEl = panelContainer.querySelector('textarea[data-field="params"]');
+        const promptEl = panelContainer.querySelector('textarea[data-field="system_prompt"]');
+        draftInputs[agentId] = {
+            paramsText: paramsEl ? paramsEl.value : '',
+            promptText: promptEl ? promptEl.value : ''
         };
-
-        Object.entries(prompts).forEach(([key, content]) => {
-            const section = document.createElement('div');
-            section.className = 'prompt-section';
-
-            const title = agentNames[key] || key;
-            const contentHtml = content ? content : 'No prompt defined.';
-
-            section.innerHTML = `
-                <h4>
-                    <span>${title}</span>
-                    <button class="btn-sm" onclick="copyPrompt('${key}')" style="background: rgba(255,255,255,0.1); border: none; cursor: pointer; border-radius: 4px; padding: 2px 8px; color: #a0aec0; font-size: 10px;">Copy</button>
-                </h4>
-                <div id="prompt-content-${key}" class="prompt-content">${escapeHtml(contentHtml)}</div>
-            `;
-            promptsContainer.appendChild(section);
-        });
     }
 
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    window.copyPrompt = function (key) {
-        const el = document.getElementById(`prompt-content-${key}`);
-        if (!el) return;
-
-        navigator.clipboard.writeText(el.textContent).then(() => {
-            const btn = event.target;
-            const originalText = btn.textContent;
-            btn.textContent = 'Copied!';
-            btn.style.color = '#00ff9d';
-            setTimeout(() => {
-                btn.textContent = originalText;
-                btn.style.color = '#a0aec0';
-            }, 2000);
-        });
-    };
-
-    // Update LLM Info in Header
-    const originalUpdateDashboard = window.updateDashboard;
-    window.updateDashboard = async function () {
-        // Run original first
-        if (originalUpdateDashboard) await originalUpdateDashboard();
-
-        // This is a bit inefficient to fetch twice, but for simplicity we'll do it 
-        // OR we can rely on the fact that /api/status now includes llm_info as well (if I updated app.py correctly)
-        // Let's check if data had it. In updateDashboard I can't easily access the data without modifying it.
-        // Actually, let's just make a specific call once in a while or modify renderSystemStatus.
-    };
-
-    // Better way: intercept the state update to show LLM info
-    const originalRenderSystemStatus = window.renderSystemStatus;
-    window.renderSystemStatus = function (system) {
-        if (originalRenderSystemStatus) originalRenderSystemStatus(system);
-
-        // Use global data if available
-        // In app.js, the updateDashboard fetches data. We can hook into it.
-    };
-
-    // Let's just add a small hook to the end of the fetch loop or specific logic
-    const originalApiFetch = window.apiFetch;
-    // (Existing updateDashboard uses apiFetch(API_URL).then(data => ...))
-    // The most robust way is to modify the existing `updateDashboard` function's then block.
-    // However, since I can't easily regex-replace a large function safely, 
-    // I'll add a separate poller for LLM info or wait for the next cycle.
-
-    async function updateLlmBadge() {
-        try {
-            const res = await fetch('/api/agents/prompts', { credentials: 'include' });
-            const data = await res.json();
-            if (data && data.llm_info && data.llm_info.provider !== 'None') {
-                llmProviderText.textContent = data.llm_info.provider.toUpperCase();
-                llmModelText.textContent = data.llm_info.model;
-                llmInfoBadge.style.display = 'inline-flex';
-            } else {
-                llmInfoBadge.style.display = 'none';
+    function buildSettingsPayload() {
+        const payload = {
+            agents: JSON.parse(JSON.stringify(agentSettings.agents || {}))
+        };
+        AGENT_DEFS.forEach(def => {
+            const draft = draftInputs[def.id];
+            const base = agentSettings.agents[def.id] || { params: {}, system_prompt: '' };
+            const paramsRaw = draft?.paramsText ?? JSON.stringify(base.params || {}, null, 2);
+            const promptRaw = draft?.promptText ?? base.system_prompt || '';
+            let parsedParams = {};
+            if (paramsRaw && paramsRaw.trim()) {
+                try {
+                    parsedParams = JSON.parse(paramsRaw);
+                } catch (err) {
+                    activeAgentId = def.id;
+                    renderAgentTabs();
+                    renderAgentPanel(activeAgentId);
+                    throw new Error(`Invalid JSON in ${def.label} parameters`);
+                }
             }
+            payload.agents[def.id] = {
+                params: parsedParams,
+                system_prompt: promptRaw || ''
+            };
+        });
+        return payload;
+    }
+
+    function updateLlmBadge(llmInfo) {
+        if (!llmInfoBadge || !llmProviderText || !llmModelText) return;
+        if (llmInfo && llmInfo.provider && llmInfo.provider !== 'None') {
+            llmProviderText.textContent = llmInfo.provider.toUpperCase();
+            llmModelText.textContent = llmInfo.model || '';
+            llmInfoBadge.style.display = 'inline-flex';
+        } else {
+            llmInfoBadge.style.display = 'none';
+        }
+    }
+
+    async function refreshLlmBadge() {
+        try {
+            const res = await fetch('/api/agents/settings', { credentials: 'include' });
+            const data = await res.json();
+            updateLlmBadge(data?.llm_info);
         } catch (err) {
             console.warn('Failed to update LLM badge:', err);
         }
     }
 
-    // Update every 30 seconds
-    updateLlmBadge();
-    setInterval(updateLlmBadge, 30000);
+    refreshLlmBadge();
+    setInterval(refreshLlmBadge, 30000);
 })();
 
 // ========================================

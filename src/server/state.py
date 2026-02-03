@@ -95,6 +95,7 @@ class SharedState:
     # [NEW] LLM Config & Prompts Display
     agent_prompts: Dict[str, str] = field(default_factory=dict)
     llm_info: Dict[str, str] = field(default_factory=dict)
+    agent_settings: Dict[str, Any] = field(default_factory=dict)
     
     def update_market(self, symbol: str, price: float, regime: str, position: str):
         self.current_price[symbol] = price
