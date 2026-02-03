@@ -848,6 +848,18 @@ textarea:focus {
     min-height: 120px;
 }
 
+.agent-config-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.agent-config-toggle-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #00ff9d;
+}
+
 .agent-config-toggle {
     display: flex;
     align-items: center;

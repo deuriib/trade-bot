@@ -3844,7 +3844,7 @@ document.addEventListener('DOMContentLoaded', function () {
     console.log('🎯 Fallback Handler Loaded');
 
     // Initialize TradingView chart (fallback)
-    if (!window.chartInitialized) {
+    if (!window.chartInitialized && typeof loadTradingViewChart === 'function') {
         loadTradingViewChart();
     }
     const btn = document.getElementById('btn-settings');
@@ -4624,6 +4624,11 @@ function renderTradeHistory(trades) {
         let agentSettings = { agents: {} };
         let draftInputs = {};
         let activeAgentId = AGENT_DEFS[0]?.id || null;
+        let agentEnabled = {};
+
+        // Initialize tabs/panel immediately to avoid blank modal on fetch failure
+        renderAgentTabs();
+        renderAgentPanel(activeAgentId);
 
         if (btnViewPrompts) {
             btnViewPrompts.addEventListener('click', async function () {
@@ -4651,13 +4656,20 @@ function renderTradeHistory(trades) {
             saveBtn.addEventListener('click', async function () {
                 try {
                     stashDraft(activeAgentId);
-                    const payload = buildSettingsPayload();
+                    const { settings, enabled } = buildSettingsPayload();
                     saveBtn.disabled = true;
                     await apiFetch('/api/agents/settings', {
                         method: 'POST',
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify(settings)
                     });
-                    agentSettings = payload;
+                    if (enabled && Object.keys(enabled).length > 0) {
+                        await apiFetch('/api/agents/config', {
+                            method: 'POST',
+                            body: JSON.stringify({ agents: enabled })
+                        });
+                        agentEnabled = { ...(agentEnabled || {}), ...enabled };
+                    }
+                    agentSettings = settings;
                     alert('Agent settings saved.');
                 } catch (err) {
                     console.error('Failed to save agent settings:', err);
@@ -4668,21 +4680,38 @@ function renderTradeHistory(trades) {
             });
         }
 
-    async function loadAgentSettings() {
-        if (!panelContainer || !tabsContainer) return;
-        panelContainer.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">Loading agent settings...</p>';
-        try {
-            const response = await apiFetch('/api/agents/settings');
-            const data = await response.json();
-            agentSettings = normalizeSettings(data);
-            renderAgentTabs();
-            renderAgentPanel(activeAgentId);
-            updateLlmBadge(data?.llm_info);
-        } catch (err) {
-            console.error('Failed to load agent settings:', err);
-            panelContainer.innerHTML = `<p style="color: #ff5b5b; text-align: center; padding: 20px;">Error: ${err.message}</p>`;
+        async function loadAgentSettings() {
+            if (!panelContainer || !tabsContainer) return;
+            panelContainer.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">Loading agent settings...</p>';
+            try {
+                const response = await apiFetch('/api/agents/settings');
+                const data = await response.json();
+                agentSettings = normalizeSettings(data);
+                agentEnabled = await loadAgentEnabled();
+                renderAgentTabs();
+                renderAgentPanel(activeAgentId);
+                updateLlmBadge(data?.llm_info);
+            } catch (err) {
+                console.error('Failed to load agent settings:', err);
+                renderAgentTabs();
+                renderAgentPanel(activeAgentId);
+                panelContainer.insertAdjacentHTML(
+                    'afterbegin',
+                    `<p style="color: #ff5b5b; text-align: center; padding: 10px 0;">Error: ${err.message}</p>`
+                );
+            }
         }
-    }
+
+        async function loadAgentEnabled() {
+            try {
+                const res = await apiFetch('/api/agents/config');
+                const data = await res.json();
+                return data?.agents || {};
+            } catch (err) {
+                console.warn('Failed to load agent config:', err);
+                return {};
+            }
+        }
 
     function normalizeSettings(data) {
         const agents = data && data.agents && typeof data.agents === 'object' ? data.agents : {};
@@ -4720,17 +4749,23 @@ function renderTradeHistory(trades) {
         });
     }
 
-    function renderAgentPanel(agentId) {
-        if (!agentId) return;
-        ensureAgentConfig(agentId);
-        const def = AGENT_DEFS.find(item => item.id === agentId);
-        const draft = draftInputs[agentId];
-        const paramsText = draft?.paramsText ?? JSON.stringify(agentSettings.agents[agentId].params || {}, null, 2);
-        const promptText = draft?.promptText ?? (agentSettings.agents[agentId].system_prompt || '');
+        function renderAgentPanel(agentId) {
+            if (!agentId) return;
+            ensureAgentConfig(agentId);
+            const def = AGENT_DEFS.find(item => item.id === agentId);
+            const draft = draftInputs[agentId];
+            const paramsText = draft?.paramsText ?? JSON.stringify(agentSettings.agents[agentId].params || {}, null, 2);
+            const promptText = draft?.promptText ?? (agentSettings.agents[agentId].system_prompt || '');
+            const enabledValue = draft?.enabled ?? agentEnabled?.[agentId];
+            const isEnabled = enabledValue === undefined ? true : Boolean(enabledValue);
 
-        panelContainer.innerHTML = `
+            panelContainer.innerHTML = `
             <div class="agent-config-section">
                 <h4>${def?.label || agentId}</h4>
+                <div class="agent-config-row agent-config-toggle-row">
+                    <label>Enable Agent</label>
+                    <input type="checkbox" data-field="enabled" ${isEnabled ? 'checked' : ''} />
+                </div>
                 <div class="agent-config-row">
                     <label>Parameters (JSON)</label>
                     <textarea data-field="params" rows="10" spellcheck="false"></textarea>
@@ -4749,29 +4784,35 @@ function renderTradeHistory(trades) {
         if (promptEl) promptEl.value = promptText;
     }
 
-    function stashDraft(agentId) {
-        if (!agentId) return;
-        const paramsEl = panelContainer.querySelector('textarea[data-field="params"]');
-        const promptEl = panelContainer.querySelector('textarea[data-field="system_prompt"]');
-        draftInputs[agentId] = {
-            paramsText: paramsEl ? paramsEl.value : '',
-            promptText: promptEl ? promptEl.value : ''
-        };
-    }
+        function stashDraft(agentId) {
+            if (!agentId) return;
+            const paramsEl = panelContainer.querySelector('textarea[data-field="params"]');
+            const promptEl = panelContainer.querySelector('textarea[data-field="system_prompt"]');
+            const enabledEl = panelContainer.querySelector('input[data-field="enabled"]');
+            draftInputs[agentId] = {
+                paramsText: paramsEl ? paramsEl.value : '',
+                promptText: promptEl ? promptEl.value : '',
+                enabled: enabledEl ? enabledEl.checked : undefined
+            };
+        }
 
-    function buildSettingsPayload() {
-        const payload = {
-            agents: JSON.parse(JSON.stringify(agentSettings.agents || {}))
-        };
-        AGENT_DEFS.forEach(def => {
-            const draft = draftInputs[def.id];
-            const base = agentSettings.agents[def.id] || { params: {}, system_prompt: '' };
-            const paramsRaw = draft?.paramsText ?? JSON.stringify(base.params || {}, null, 2);
-            const promptRaw = (draft?.promptText ?? base.system_prompt) || '';
-            let parsedParams = {};
-            if (paramsRaw && paramsRaw.trim()) {
-                try {
-                    parsedParams = JSON.parse(paramsRaw);
+        function buildSettingsPayload() {
+            const payload = {
+                agents: JSON.parse(JSON.stringify(agentSettings.agents || {}))
+            };
+            const enabledPayload = {};
+            AGENT_DEFS.forEach(def => {
+                const draft = draftInputs[def.id];
+                const base = agentSettings.agents[def.id] || { params: {}, system_prompt: '' };
+                const paramsRaw = draft?.paramsText ?? JSON.stringify(base.params || {}, null, 2);
+                const promptRaw = (draft?.promptText ?? base.system_prompt) || '';
+                if (draft?.enabled !== undefined) {
+                    enabledPayload[def.id] = draft.enabled;
+                }
+                let parsedParams = {};
+                if (paramsRaw && paramsRaw.trim()) {
+                    try {
+                        parsedParams = JSON.parse(paramsRaw);
                 } catch (err) {
                     activeAgentId = def.id;
                     renderAgentTabs();
@@ -4779,15 +4820,15 @@ function renderTradeHistory(trades) {
                     throw new Error(`Invalid JSON in ${def.label} parameters`);
                 }
             }
-            payload.agents[def.id] = {
-                params: parsedParams,
-                system_prompt: promptRaw || ''
-            };
-        });
-        return payload;
-    }
+                payload.agents[def.id] = {
+                    params: parsedParams,
+                    system_prompt: promptRaw || ''
+                };
+            });
+            return { settings: payload, enabled: enabledPayload };
+        }
 
-    function updateLlmBadge(llmInfo) {
+        function updateLlmBadge(llmInfo) {
         if (!llmInfoBadge || !llmProviderText || !llmModelText) return;
         if (llmInfo && llmInfo.provider && llmInfo.provider !== 'None') {
             llmProviderText.textContent = llmInfo.provider.toUpperCase();
@@ -4798,15 +4839,15 @@ function renderTradeHistory(trades) {
         }
     }
 
-    async function refreshLlmBadge() {
-        try {
-            const res = await fetch('/api/agents/settings', { credentials: 'include' });
-            const data = await res.json();
-            updateLlmBadge(data?.llm_info);
-        } catch (err) {
-            console.warn('Failed to update LLM badge:', err);
+        async function refreshLlmBadge() {
+            try {
+                const res = await fetch('/api/agents/settings', { credentials: 'include' });
+                const data = await res.json();
+                updateLlmBadge(data?.llm_info);
+            } catch (err) {
+                console.warn('Failed to update LLM badge:', err);
+            }
         }
-    }
 
         refreshLlmBadge();
         setInterval(refreshLlmBadge, 30000);
