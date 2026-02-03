@@ -124,28 +124,35 @@
                 <!-- Left Sidebar: Account & Portfolios -->
                 <aside class="sidebar-left">
                     <section class="row-charts-account">
-                        <div class="glass-panel card pnl-curve-card">
-                            <h2 data-i18n="section.balance_curve">📈 Balance</h2>
-                            <div class="pnl-metrics-compact">
-                                <div class="pnl-metric">
-                                    <span class="stat-label">Initial</span>
-                                    <span class="stat-value" id="account-realtime-initial">$1,000</span>
-                                </div>
-                                <div class="pnl-metric">
-                                    <span class="stat-label">Current</span>
-                                    <span class="stat-value" id="account-realtime-balance">$0</span>
-                                </div>
-                                <div class="pnl-metric">
-                                    <span class="stat-label">PnL</span>
-                                    <span id="acc-pnl" class="stat-value">$0.00</span>
-                                </div>
-                                <div class="pnl-metric">
-                                    <span class="stat-label">PnL%</span>
-                                    <span id="account-total-pnl-pct" class="stat-value">0%</span>
+                        <div class="glass-panel card live-positions-card">
+                            <div class="card-header-compact">
+                                <h2 data-i18n="section.live_positions">📊 Live Positions</h2>
+                                <span id="position-count-badge" class="badge">0</span>
+                            </div>
+                            <div class="positions-summary">
+                                <div class="summary-item">
+                                    <span class="label">Total Unrealized PnL</span>
+                                    <span id="total-unrealized-pnl" class="value neutral">$0.00</span>
                                 </div>
                             </div>
-                            <div class="pnl-chart-wrapper-compact">
-                                <canvas id="equityChart" data-chart-mode="equity"></canvas>
+                            <div class="positions-list-container">
+                                <div id="position-details" class="position-details-list">
+                                    <span class="empty-msg">No active positions</span>
+                                </div>
+                            </div>
+
+                            <hr class="sidebar-divider">
+
+                            <!-- Compact Account Stats -->
+                            <div class="account-stats-compact">
+                                <div class="stat-row">
+                                    <span class="label" data-i18n="account.balance">Wallet Balance</span>
+                                    <span id="account-realtime-balance" class="value">$0.00</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="label">Realized PnL</span>
+                                    <span id="acc-pnl" class="value">$0.00</span>
+                                </div>
                             </div>
                         </div>
                     </section>

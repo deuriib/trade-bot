@@ -441,11 +441,11 @@ class MultiAgentTradingBot:
                     selector.select_auto1_recent_momentum(account_equity=account_equity)
                 ) or []
 
-                if top_symbols:
-                    self.symbols = top_symbols
-                    self.current_symbol = top_symbols[0]
-                    global_state.symbols = top_symbols
-                    global_state.current_symbol = self.current_symbol
+            if top_symbols:
+                self.symbols = top_symbols
+                self.current_symbol = top_symbols[0]
+                global_state.symbols = top_symbols
+                global_state.current_symbol = self.current_symbol
                 selector_payload = {
                     "mode": "AUTO3" if self.use_auto3 else "AUTO1",
                     "symbols": list(top_symbols),
@@ -1135,6 +1135,7 @@ class MultiAgentTradingBot:
             if not (hasattr(self, '_headless_mode') and self._headless_mode):
                 print("\n[Step 1/4] 🕵️ The Oracle (Data Agent) - Fetching data...")
             global_state.oracle_status = "Fetching Data..."
+            global_state.add_agent_message("system", f"Fetching market data for {self.current_symbol}...", level="info")
             
             try:
                 market_snapshot = await self.data_sync_agent.fetch_all_timeframes(
@@ -1386,66 +1387,64 @@ class MultiAgentTradingBot:
                 print("[Step 2/4] 👥 Multi-Agent Analysis (Parallel)...")
             global_state.add_log(f"[📊 SYSTEM] Parallel analysis started for {self.current_symbol}")
 
-            # Define Parallel Tasks
-            analysis_tasks = []
-            
-            # Task 1: Quant Analyst (Trend, Oscillator, Sentiment)
-            analysis_tasks.append(self.quant_analyst.analyze_all_timeframes(market_snapshot))
-            
-            # Task 2: Predict Agent (Prophet)
-            if self.agent_config.predict_agent and self.current_symbol in self.predict_agents:
-                df_15m_features = self.feature_engineer.build_features(processed_dfs['15m'])
-                latest_features = {}
-                if not df_15m_features.empty:
-                    latest = df_15m_features.iloc[-1].to_dict()
-                    latest_features = {k: v for k, v in latest.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
-                analysis_tasks.append(self.predict_agents[self.current_symbol].predict(latest_features))
-            else:
-                analysis_tasks.append(asyncio.sleep(0)) # Noop placeholder
-                
-            # Task 3: Reflection Agent
-            reflection_task = None
-            total_trades = len(global_state.trade_history)
-            if self.reflection_agent and self.reflection_agent.should_reflect(total_trades):
-                trades_to_analyze = global_state.trade_history[-10:]
-                reflection_task = self.reflection_agent.generate_reflection(trades_to_analyze)
-                analysis_tasks.append(reflection_task)
-            else:
-                analysis_tasks.append(asyncio.sleep(0)) # Noop placeholder
-                
+            # Define Parallel Tasks with Immediate Message Dispatch Wrappers
+            async def quant_task():
+                res = await self.quant_analyst.analyze_all_timeframes(market_snapshot)
+                # --- Post Quant Analyst Results Immediately ---
+                trend_score = res.get('trend', {}).get('total_trend_score', 0)
+                osc_score = res.get('oscillator', {}).get('total_osc_score', 0)
+                sent_score = res.get('sentiment', {}).get('total_sentiment_score', 0)
+                quant_msg = f"Analysis Complete. Trend={trend_score:+.0f} | Osc={osc_score:+.0f} | Sent={sent_score:+.0f}"
+                global_state.add_agent_message("quant_analyst", quant_msg, level="success")
+                return res
+
+            async def predict_task():
+                if self.agent_config.predict_agent and self.current_symbol in self.predict_agents:
+                    df_15m_features = self.feature_engineer.build_features(processed_dfs['15m'])
+                    latest_features = {}
+                    if not df_15m_features.empty:
+                        latest = df_15m_features.iloc[-1].to_dict()
+                        latest_features = {k: v for k, v in latest.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+                    
+                    res = await self.predict_agents[self.current_symbol].predict(latest_features)
+                    # --- Post Predict Agent Results Immediately ---
+                    global_state.prophet_probability = res.probability_up
+                    p_up_pct = res.probability_up * 100
+                    direction = "↗UP" if res.probability_up > 0.55 else ("↘DN" if res.probability_up < 0.45 else "➖NEU")
+                    predict_msg = f"Probability Up: {p_up_pct:.1f}% {direction} (Conf: {res.confidence*100:.0f}%)"
+                    global_state.add_agent_message("predict_agent", predict_msg, level="info")
+                    self.saver.save_prediction(asdict(res), self.current_symbol, snapshot_id, cycle_id=cycle_id)
+                    return res
+                return None
+
+            async def reflection_task_wrapper():
+                total_trades = len(global_state.trade_history)
+                if self.reflection_agent and self.reflection_agent.should_reflect(total_trades):
+                    trades_to_analyze = global_state.trade_history[-10:]
+                    res = await self.reflection_agent.generate_reflection(trades_to_analyze)
+                    # --- Post Reflection Agent Results Immediately ---
+                    if res:
+                        reflection_text = res.to_prompt_text()
+                        global_state.last_reflection = res.raw_response
+                        global_state.last_reflection_text = reflection_text
+                        global_state.reflection_count = self.reflection_agent.reflection_count
+                        global_state.add_agent_message("reflection_agent", f"Reflected on {len(trades_to_analyze)} trades. Insight: {res.insight[:100]}...", level="info")
+                    return res
+                return None
+
             # Execute Parallel Tasks
-            analysis_results = await asyncio.gather(*analysis_tasks)
+            analysis_results = await asyncio.gather(
+                quant_task(),
+                predict_task(),
+                reflection_task_wrapper()
+            )
             
             # Process Results
             quant_analysis = analysis_results[0]
-            predict_result = analysis_results[1] if isinstance(analysis_results[1], object) and hasattr(analysis_results[1], 'probability_up') else None
-            reflection_result = analysis_results[2] if len(analysis_results) > 2 and analysis_results[2] else None
+            predict_result = analysis_results[1]
+            reflection_result = analysis_results[2]
             
-            # --- Post Quant Analyst Results ---
-            trend_score = quant_analysis.get('trend', {}).get('total_trend_score', 0)
-            osc_score = quant_analysis.get('oscillator', {}).get('total_osc_score', 0)
-            sent_score = quant_analysis.get('sentiment', {}).get('total_sentiment_score', 0)
-            quant_msg = f"Analysis Complete. Trend={trend_score:+.0f} | Osc={osc_score:+.0f} | Sent={sent_score:+.0f}"
-            global_state.add_agent_message("quant_analyst", quant_msg, level="success")
-            
-            # --- Post Predict Agent Results ---
-            if predict_result:
-                global_state.prophet_probability = predict_result.probability_up
-                p_up_pct = predict_result.probability_up * 100
-                direction = "↗UP" if predict_result.probability_up > 0.55 else ("↘DN" if predict_result.probability_up < 0.45 else "➖NEU")
-                predict_msg = f"Probability Up: {p_up_pct:.1f}% {direction} (Conf: {predict_result.confidence*100:.0f}%)"
-                global_state.add_agent_message("predict_agent", predict_msg, level="info")
-                self.saver.save_prediction(asdict(predict_result), self.current_symbol, snapshot_id, cycle_id=cycle_id)
-            
-            # --- Post Reflection Agent Results ---
-            if reflection_result:
-                reflection_text = reflection_result.to_prompt_text()
-                global_state.last_reflection = reflection_result.raw_response
-                global_state.last_reflection_text = reflection_text
-                global_state.reflection_count = self.reflection_agent.reflection_count
-                global_state.add_agent_message("reflection_agent", f"Reflected on {len(trades_to_analyze)} trades. Insight: {reflection_result.insight[:100]}...", level="info")
-            else:
-                reflection_text = global_state.last_reflection_text
+            reflection_text = reflection_result.to_prompt_text() if reflection_result else global_state.last_reflection_text
             
             # 💉 INJECT MACD DATA (Fix for Missing Data)
             try:
@@ -2110,6 +2109,8 @@ class MultiAgentTradingBot:
                 else:
                     if not (hasattr(self, '_headless_mode') and self._headless_mode):
                         print("[Step 3/5] ⚖️ DecisionCore - Rule-based decision...")
+                    
+                    global_state.add_agent_message("decision_core", "⚖️ Running rule-based decision logic...", level="info")
                     decision_source = 'decision_core'
                     vote_core = await self.decision_core.make_decision(
                         quant_analysis=quant_analysis,
@@ -2493,6 +2494,7 @@ class MultiAgentTradingBot:
             # 提取 ATR 百分比用于动态止损计算
             atr_pct = regime_result.get('atr_pct', None) if regime_result else None
             
+            global_state.add_agent_message("risk_audit", "🛡️ Guardian is auditing risk and positions...", level="info")
             # 执行审计
             audit_result = await self.risk_audit.audit_decision(
                 decision=order_params,

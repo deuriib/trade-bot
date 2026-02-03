@@ -1053,11 +1053,11 @@ function buildBalanceSeriesFromTrades(trades = [], initialBalance = 0) {
     return series;
 }
 
-function computeRealtimeBalance({ trades = [] }) {
+function computeRealtimeBalance({ positions = [], trades = [] }) {
     const initial = FIXED_INITIAL_BALANCE;
     const realized = sumRealizedFromTrades(trades);
-    const unrealized = 0;
-    const totalPnl = realized;
+    const unrealized = sumUnrealizedFromPositions(positions);
+    const totalPnl = realized + unrealized;
     const realtimeBalance = initial + totalPnl;
     return { initial, realized, unrealized, totalPnl, realtimeBalance, source: 'trades' };
 }
@@ -1095,24 +1095,11 @@ function updateRealtimeBalance({ account, system, virtualAccount, chartData, pos
     const currentBalanceDisplay = displayInitial + pnlAmount;
 
     setTxt('account-realtime-balance', fmt(currentBalanceDisplay));
-    setTxt('account-realtime-initial', fmt(displayInitial));
-    setTxt('account-realtime-realized', fmt(realized));
-    setTxt('account-realtime-unrealized', fmt(unrealized));
-    setPnlClass('account-realtime-realized', realized);
-    setPnlClass('account-realtime-unrealized', unrealized);
-    setPnlClass('account-realtime-balance', pnlAmount);
-    const pnlElement = document.getElementById('acc-pnl');
-    if (pnlElement) {
-        pnlElement.textContent = fmt(pnlAmount);
-        pnlElement.classList.remove('pos', 'neg', 'neutral');
-        if (pnlAmount > 0) {
-            pnlElement.classList.add('pos');
-        } else if (pnlAmount < 0) {
-            pnlElement.classList.add('neg');
-        } else {
-            pnlElement.classList.add('neutral');
-        }
-    }
+    setTxt('acc-pnl', fmt(realized));
+    setTxt('total-unrealized-pnl', fmt(unrealized));
+    setPnlClass('acc-pnl', realized);
+    setPnlClass('total-unrealized-pnl', unrealized);
+    setPnlClass('account-realtime-balance', realized);
 
 
     // ✅ 始终同步 EQUITY 和 Current Balance，确保两者一致
@@ -1331,52 +1318,53 @@ function updatePositionInfo(account, positions = []) {
     const fmt = num => `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     // Update position count
-    const countEl = document.getElementById('position-count');
-    if (countEl) {
-        const posCount = positions.length || 0;
-        countEl.textContent = `📊 Positions: ${posCount}`;
+    const countBadge = document.getElementById('position-count-badge');
+    if (countBadge) {
+        countBadge.textContent = positions.length || 0;
     }
 
-    // Update position details
+    // Update total unrealized PnL
+    const unrealized = sumUnrealizedFromPositions(positions);
+    const pnlEl = document.getElementById('total-unrealized-pnl');
+    if (pnlEl) {
+        pnlEl.textContent = fmt(unrealized);
+        pnlEl.classList.remove('pos', 'neg', 'neutral');
+        if (unrealized > 0) pnlEl.classList.add('pos');
+        else if (unrealized < 0) pnlEl.classList.add('neg');
+        else pnlEl.classList.add('neutral');
+    }
+
+    // Update position details list
     const detailsEl = document.getElementById('position-details');
     if (detailsEl) {
         if (positions && positions.length > 0) {
             detailsEl.innerHTML = positions.map(pos => {
-                const pnlClass = pos.pnl > 0 ? 'pos' : (pos.pnl < 0 ? 'neg' : 'neutral');
+                const pnlStatus = pos.pnl > 0 ? 'pos' : (pos.pnl < 0 ? 'neg' : 'neutral');
+                const sideLabel = (pos.side || 'LONG').toUpperCase();
+                const sideClass = sideLabel === 'LONG' ? 'long' : 'short';
 
                 // Calculate ROE %
                 const leverage = pos.leverage || 1;
-                // Margin = (Entry * Qty) / Leveage
-                const margin = (pos.entry_price * pos.quantity) / leverage;
-                let pnlPct = 0;
-                if (margin > 0) pnlPct = (pos.pnl / margin) * 100;
-                const pctClass = pnlPct > 0 ? 'pos' : (pnlPct < 0 ? 'neg' : 'neutral');
-
-                const sideClass = (pos.side || 'LONG').toUpperCase() === 'LONG' ? 'pos' : 'neg';
+                const margin = (pos.entry_price * Math.abs(pos.quantity)) / leverage;
+                let roe = 0;
+                if (margin > 0) roe = (pos.pnl / margin) * 100;
+                const roeStatus = roe > 0 ? 'pos' : (roe < 0 ? 'neg' : 'neutral');
 
                 return `
-                    <div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
-                        <span class="${sideClass}" style="font-weight: 600;">${pos.symbol}</span>
-                        <span class="val ${pnlClass}" style="font-size: 0.9em; font-weight: bold;">${fmt(pos.pnl)}</span>
-                        <span class="val ${pctClass}" style="font-size: 0.9em; font-weight: bold;">${pnlPct.toFixed(2)}%</span>
+                    <div class="position-item ${sideClass}">
+                        <div class="pos-header">
+                            <span class="pos-symbol">${pos.symbol}</span>
+                            <span class="pos-pnl ${pnlStatus}">${fmt(pos.pnl)}</span>
+                        </div>
+                        <div class="pos-sub">
+                            <span>${sideLabel} ${pos.leverage}x</span>
+                            <span class="${roeStatus}">${roe.toFixed(2)}% ROE</span>
+                        </div>
                     </div>
                 `;
             }).join('');
         } else {
-            detailsEl.innerHTML = '<span style="color: #718096; font-size: 0.8em;">No open positions</span>';
-        }
-    }
-
-    // Update total PnL with color
-    const pnlEl = document.getElementById('position-pnl');
-    if (pnlEl) {
-        pnlEl.textContent = `Total PnL: ${fmt(account.total_pnl)}`;
-        if (account.total_pnl > 0) {
-            pnlEl.className = 'val pos';
-        } else if (account.total_pnl < 0) {
-            pnlEl.className = 'val neg';
-        } else {
-            pnlEl.className = 'val neutral';
+            detailsEl.innerHTML = '<span class="empty-msg">No active positions</span>';
         }
     }
 }

@@ -452,6 +452,135 @@ textarea:focus {
     margin-bottom: 10px;
 }
 
+/* Live Positions Card Styles */
+.live-positions-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.card-header-compact {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.card-header-compact h2 {
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.positions-summary {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+}
+
+.summary-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.summary-item .label {
+    font-size: 0.8rem;
+    color: #a0aec0;
+}
+
+.summary-item .value {
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+.positions-list-container {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 15px;
+    min-height: 150px;
+}
+
+.position-details-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.position-item {
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+}
+
+.position-item.long {
+    border-left-color: #48bb78;
+}
+
+.position-item.short {
+    border-left-color: #f56565;
+}
+
+.pos-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.pos-symbol {
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.pos-pnl {
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.pos-sub {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #718096;
+}
+
+.empty-msg {
+    color: #718096;
+    font-size: 0.8rem;
+    text-align: center;
+    padding: 20px 0;
+}
+
+.sidebar-divider {
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 15px 0;
+}
+
+.account-stats-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+}
+
+.stat-row .label {
+    color: #a0aec0;
+}
+
+.stat-row .value {
+    font-weight: 600;
+    font-family: 'IBM Plex Mono', monospace;
+}
+
 /* Existing Chatroom Overrides */
 .chatroom-container {
     display: flex;
