@@ -1626,6 +1626,11 @@ function updateAgentFramework(system, decision, agents) {
             bull_agent: 'Bull Perspective',
             bear_agent: 'Bear Perspective',
             reflection_agent: 'Reflection Agent',
+            trend_agent: 'Trend Agent',
+            setup_agent: 'Setup Agent',
+            trigger_agent: 'Trigger Agent',
+            risk_audit: 'Risk Audit',
+            symbol_selector: 'Symbol Selector',
             decision_core: 'Decision Core'
         },
         zh: {
@@ -1638,6 +1643,11 @@ function updateAgentFramework(system, decision, agents) {
             bull_agent: '多头观点',
             bear_agent: '空头观点',
             reflection_agent: '复盘代理',
+            trend_agent: '趋势代理',
+            setup_agent: '设置代理',
+            trigger_agent: '触发代理',
+            risk_audit: '风控审计',
+            symbol_selector: '选币代理',
             decision_core: '决策核心'
         }
     };
@@ -2703,9 +2713,10 @@ function updateAgentFramework(system, decision, agents) {
             return;
         }
 
-        // Check if update is needed (simple optimization)
-        const currentMsgCount = chatContainer.querySelectorAll('.chat-bubble').length;
-        if (currentMsgCount === messages.length) return;
+        // Check if update is needed (content-aware)
+        const lastMsg = messages[messages.length - 1];
+        const sig = lastMsg ? `${messages.length}|${lastMsg.timestamp}|${lastMsg.agent}|${lastMsg.content}` : `${messages.length}`;
+        if (chatContainer.dataset.lastSig === sig) return;
 
         chatContainer.innerHTML = '';
         messages.forEach(msg => {
@@ -2724,6 +2735,7 @@ function updateAgentFramework(system, decision, agents) {
             `;
             chatContainer.appendChild(bubble);
         });
+        chatContainer.dataset.lastSig = sig;
 
         // Auto-scroll to bottom
         setTimeout(() => {

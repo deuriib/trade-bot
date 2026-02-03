@@ -441,11 +441,11 @@ class MultiAgentTradingBot:
                     selector.select_auto1_recent_momentum(account_equity=account_equity)
                 ) or []
 
-            if top_symbols:
-                self.symbols = top_symbols
-                self.current_symbol = top_symbols[0]
-                global_state.symbols = top_symbols
-                global_state.current_symbol = self.current_symbol
+                if top_symbols:
+                    self.symbols = top_symbols
+                    self.current_symbol = top_symbols[0]
+                    global_state.symbols = top_symbols
+                    global_state.current_symbol = self.current_symbol
                 selector_payload = {
                     "mode": "AUTO3" if self.use_auto3 else "AUTO1",
                     "symbols": list(top_symbols),
@@ -490,6 +490,11 @@ class MultiAgentTradingBot:
                     selector.start_auto_refresh()
                 log.info(f"✅ SymbolSelectorAgent ready: {', '.join(top_symbols)}")
                 global_state.add_log(f"[🎰 SELECTOR] Selected: {', '.join(top_symbols)}")
+                global_state.add_agent_message(
+                    "symbol_selector",
+                    f"Mode: {selector_payload.get('mode', 'AUTO')} | Symbols: {', '.join(top_symbols)}",
+                    level="info"
+                )
             else:
                 log.warning("⚠️ SymbolSelectorAgent returned empty selection")
                 global_state.add_log("[🎰 SELECTOR] Empty selection (fallback to configured symbols)")
@@ -1918,6 +1923,39 @@ class MultiAgentTradingBot:
                         setup_mark = '✓' if global_state.semantic_analyses.get('setup') else '○'
                         trigger_mark = '✓' if global_state.semantic_analyses.get('trigger') else '○'
                         global_state.add_log(f"[⚖️ CRITIC] 4-Layer Analysis: Trend={trend_mark} | Setup={setup_mark} | Trigger={trigger_mark}")
+
+                        # Chatroom summaries for semantic agents
+                        trend_result = global_state.semantic_analyses.get('trend')
+                        if isinstance(trend_result, dict):
+                            meta = trend_result.get('metadata', {}) or {}
+                            summary = (
+                                f"Stance: {trend_result.get('stance', 'UNKNOWN')} | "
+                                f"Strength: {meta.get('strength', 'N/A')} | "
+                                f"ADX: {meta.get('adx', 'N/A')} | "
+                                f"OI Fuel: {meta.get('oi_fuel', 'N/A')}"
+                            )
+                            global_state.add_agent_message("trend_agent", summary, level="info")
+
+                        setup_result = global_state.semantic_analyses.get('setup')
+                        if isinstance(setup_result, dict):
+                            meta = setup_result.get('metadata', {}) or {}
+                            summary = (
+                                f"Stance: {setup_result.get('stance', 'UNKNOWN')} | "
+                                f"Zone: {meta.get('zone', 'N/A')} | "
+                                f"KDJ: {meta.get('kdj_j', 'N/A')} | "
+                                f"MACD: {meta.get('macd_signal', 'N/A')}"
+                            )
+                            global_state.add_agent_message("setup_agent", summary, level="info")
+
+                        trigger_result = global_state.semantic_analyses.get('trigger')
+                        if isinstance(trigger_result, dict):
+                            meta = trigger_result.get('metadata', {}) or {}
+                            summary = (
+                                f"Stance: {trigger_result.get('stance', 'UNKNOWN')} | "
+                                f"Pattern: {meta.get('pattern', 'NONE')} | "
+                                f"RVOL: {meta.get('rvol', 'N/A')}x"
+                            )
+                            global_state.add_agent_message("trigger_agent", summary, level="info")
                 
                 except Exception as e:
                     log.error(f"❌ Multi-Agent analysis failed: {e}")
@@ -2472,6 +2510,20 @@ class MultiAgentTradingBot:
                  global_state.add_log(f"[🛡️ GUARDIAN] ❌ BLOCKED ({audit_result.blocked_reason})")
             else:
                  global_state.add_log(f"[🛡️ GUARDIAN] ✅ PASSED (Risk: {audit_result.risk_level.value})")
+            
+            # Chatroom: Risk Audit summary
+            if audit_result.passed:
+                global_state.add_agent_message(
+                    "risk_audit",
+                    f"PASSED | Risk: {audit_result.risk_level.value}",
+                    level="success"
+                )
+            else:
+                global_state.add_agent_message(
+                    "risk_audit",
+                    f"BLOCKED | {audit_result.blocked_reason}",
+                    level="warning"
+                )
             
             # ✅ Update Global State with FULL Decision info (Vote + Audit)
             decision_dict = asdict(vote_result)

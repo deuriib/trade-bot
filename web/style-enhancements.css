@@ -462,6 +462,36 @@ textarea:focus {
     align-self: flex-start;
 }
 
+.chat-bubble.trend_agent {
+    background: rgba(88, 204, 255, 0.12);
+    border-left: 4px solid #58ccff;
+    align-self: flex-start;
+}
+
+.chat-bubble.setup_agent {
+    background: rgba(129, 230, 217, 0.12);
+    border-left: 4px solid #81e6d9;
+    align-self: flex-start;
+}
+
+.chat-bubble.trigger_agent {
+    background: rgba(255, 159, 67, 0.12);
+    border-left: 4px solid #ff9f43;
+    align-self: flex-start;
+}
+
+.chat-bubble.risk_audit {
+    background: rgba(255, 99, 132, 0.12);
+    border-left: 4px solid #ff6384;
+    align-self: flex-start;
+}
+
+.chat-bubble.symbol_selector {
+    background: rgba(130, 87, 229, 0.12);
+    border-left: 4px solid #8257e5;
+    align-self: flex-start;
+}
+
 .chat-bubble.reflection_agent {
     background: rgba(255, 171, 0, 0.1);
     border-left: 4px solid #ffab00;

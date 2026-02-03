@@ -89,6 +89,8 @@ class SharedState:
     
     # [NEW] Multi-Agent Chatroom Messages
     agent_messages: List[Dict] = field(default_factory=list)
+    last_agent_message: Dict[str, str] = field(default_factory=dict)
+    last_agent_message_cycle: Dict[str, int] = field(default_factory=dict)
     
     def update_market(self, symbol: str, price: float, regime: str, position: str):
         self.current_price[symbol] = price
@@ -169,6 +171,12 @@ class SharedState:
 
     def add_agent_message(self, agent: str, content: str, role: str = "assistant", level: str = "info", symbol: Optional[str] = None):
         """Add a message to the multi-agent chatroom"""
+        # Avoid duplicate spam within the same cycle
+        last_content = self.last_agent_message.get(agent)
+        last_cycle = self.last_agent_message_cycle.get(agent)
+        if last_content == content and last_cycle == self.cycle_counter:
+            return
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         message = {
             "timestamp": timestamp,
@@ -183,6 +191,9 @@ class SharedState:
         # Keep last 100 messages
         if len(self.agent_messages) > 100:
             self.agent_messages.pop(0)
+
+        self.last_agent_message[agent] = content
+        self.last_agent_message_cycle[agent] = self.cycle_counter
         
         # Also log to system logs
         self.add_log(f"[{agent.upper()}] {content}")
