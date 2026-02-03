@@ -2742,7 +2742,18 @@ function updateAgentFramework(system, decision, agents) {
             ? messages.filter(m => Number(m.cycle) === currentCycle)
             : messages;
 
-        visibleMessages.forEach(msg => {
+        const orderedMessages = visibleMessages
+            .map((msg, idx) => ({ msg, idx }))
+            .sort((a, b) => {
+                const aFirst = a.msg.agent === 'symbol_selector';
+                const bFirst = b.msg.agent === 'symbol_selector';
+                if (aFirst && !bFirst) return -1;
+                if (!aFirst && bFirst) return 1;
+                return a.idx - b.idx;
+            })
+            .map(item => item.msg);
+
+        orderedMessages.forEach(msg => {
             const bubble = document.createElement('div');
             bubble.className = `chat-bubble ${msg.agent} chat-level-${msg.level || 'info'}`;
 
@@ -4582,6 +4593,155 @@ function renderTradeHistory(trades) {
     setTimeout(loadAgentConfig, 1000);
 
     console.log('✅ Agent selection panel initialized');
+})();
+
+// ========================================
+// LLM Config & Prompts Display Logic
+// ========================================
+(function () {
+    const btnViewPrompts = document.getElementById('btn-view-prompts');
+    const promptsModal = document.getElementById('prompts-modal');
+    const closePrompts = document.getElementById('close-prompts');
+    const promptsContainer = document.getElementById('prompts-container');
+    const llmInfoBadge = document.getElementById('llm-info-badge');
+    const llmProviderText = document.getElementById('llm-provider-text');
+    const llmModelText = document.getElementById('llm-model-text');
+
+    if (btnViewPrompts) {
+        btnViewPrompts.addEventListener('click', async function () {
+            promptsModal.style.display = 'flex';
+            await loadAgentPrompts();
+        });
+    }
+
+    if (closePrompts) {
+        closePrompts.addEventListener('click', function () {
+            promptsModal.style.display = 'none';
+        });
+    }
+
+    // Close modal when clicking outside
+    window.addEventListener('click', function (event) {
+        if (event.target === promptsModal) {
+            promptsModal.style.display = 'none';
+        }
+    });
+
+    async function loadAgentPrompts() {
+        try {
+            promptsContainer.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">Fetching agent prompts...</p>';
+            const response = await apiFetch('/api/agents/prompts');
+            const data = await response.json();
+
+            if (data && data.agent_prompts) {
+                renderPrompts(data.agent_prompts);
+            } else {
+                promptsContainer.innerHTML = '<p style="color: #ff5b5b; text-align: center; padding: 20px;">No prompts found.</p>';
+            }
+        } catch (err) {
+            console.error('Failed to load agent prompts:', err);
+            promptsContainer.innerHTML = `<p style="color: #ff5b5b; text-align: center; padding: 20px;">Error: ${err.message}</p>`;
+        }
+    }
+
+    function renderPrompts(prompts) {
+        promptsContainer.innerHTML = '';
+
+        const agentNames = {
+            'decision_core': '⚖️ Decision Core (StrategyEngine)',
+            'trend_agent': '📊 Trend Agent (1h Trend)',
+            'setup_agent': '📉 Setup Agent (15m Entry)',
+            'trigger_agent': '⚡ Trigger Agent (5m Trigger)',
+            'reflection_agent': '🧠 Reflection Agent (Retrospection)'
+        };
+
+        Object.entries(prompts).forEach(([key, content]) => {
+            const section = document.createElement('div');
+            section.className = 'prompt-section';
+
+            const title = agentNames[key] || key;
+            const contentHtml = content ? content : 'No prompt defined.';
+
+            section.innerHTML = `
+                <h4>
+                    <span>${title}</span>
+                    <button class="btn-sm" onclick="copyPrompt('${key}')" style="background: rgba(255,255,255,0.1); border: none; cursor: pointer; border-radius: 4px; padding: 2px 8px; color: #a0aec0; font-size: 10px;">Copy</button>
+                </h4>
+                <div id="prompt-content-${key}" class="prompt-content">${escapeHtml(contentHtml)}</div>
+            `;
+            promptsContainer.appendChild(section);
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    window.copyPrompt = function (key) {
+        const el = document.getElementById(`prompt-content-${key}`);
+        if (!el) return;
+
+        navigator.clipboard.writeText(el.textContent).then(() => {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.style.color = '#00ff9d';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.color = '#a0aec0';
+            }, 2000);
+        });
+    };
+
+    // Update LLM Info in Header
+    const originalUpdateDashboard = window.updateDashboard;
+    window.updateDashboard = async function () {
+        // Run original first
+        if (originalUpdateDashboard) await originalUpdateDashboard();
+
+        // This is a bit inefficient to fetch twice, but for simplicity we'll do it 
+        // OR we can rely on the fact that /api/status now includes llm_info as well (if I updated app.py correctly)
+        // Let's check if data had it. In updateDashboard I can't easily access the data without modifying it.
+        // Actually, let's just make a specific call once in a while or modify renderSystemStatus.
+    };
+
+    // Better way: intercept the state update to show LLM info
+    const originalRenderSystemStatus = window.renderSystemStatus;
+    window.renderSystemStatus = function (system) {
+        if (originalRenderSystemStatus) originalRenderSystemStatus(system);
+
+        // Use global data if available
+        // In app.js, the updateDashboard fetches data. We can hook into it.
+    };
+
+    // Let's just add a small hook to the end of the fetch loop or specific logic
+    const originalApiFetch = window.apiFetch;
+    // (Existing updateDashboard uses apiFetch(API_URL).then(data => ...))
+    // The most robust way is to modify the existing `updateDashboard` function's then block.
+    // However, since I can't easily regex-replace a large function safely, 
+    // I'll add a separate poller for LLM info or wait for the next cycle.
+
+    async function updateLlmBadge() {
+        try {
+            const res = await fetch('/api/agents/prompts', { credentials: 'include' });
+            const data = await res.json();
+            if (data && data.llm_info && data.llm_info.provider !== 'None') {
+                llmProviderText.textContent = data.llm_info.provider.toUpperCase();
+                llmModelText.textContent = data.llm_info.model;
+                llmInfoBadge.style.display = 'inline-flex';
+            } else {
+                llmInfoBadge.style.display = 'none';
+            }
+        } catch (err) {
+            console.warn('Failed to update LLM badge:', err);
+        }
+    }
+
+    // Update every 30 seconds
+    updateLlmBadge();
+    setInterval(updateLlmBadge, 30000);
 })();
 
 // ========================================

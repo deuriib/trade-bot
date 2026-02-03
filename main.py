@@ -360,6 +360,59 @@ class MultiAgentTradingBot:
         )
         
         self._sync_open_positions_to_trade_history()
+        # [NEW] Initialize LLM metadata
+        self._update_llm_metadata()
+
+    def _update_llm_metadata(self):
+        """Collect current LLM provider/model and agent system prompts for UI display"""
+        try:
+            from src.agents import TrendAgentLLM, SetupAgentLLM, TriggerAgentLLM, ReflectionAgentLLM
+            
+            # 1. Collect LLM Engine info (Decision Core)
+            llm_info = {
+                "provider": getattr(self.strategy_engine, 'provider', 'None'),
+                "model": getattr(self.strategy_engine, 'model', 'None')
+            }
+            global_state.llm_info = llm_info
+            
+            # 2. Collect System Prompts
+            prompts = {}
+            
+            # Decision Core Prompt
+            prompts["decision_core"] = self.strategy_engine._build_system_prompt()
+            
+            # Trend Agent
+            try:
+                trend_agent = TrendAgentLLM()
+                prompts["trend_agent"] = trend_agent._get_system_prompt()
+            except Exception: pass
+            
+            # Setup Agent
+            try:
+                setup_agent = SetupAgentLLM()
+                prompts["setup_agent"] = setup_agent._get_system_prompt()
+            except Exception: pass
+            
+            # Trigger Agent
+            try:
+                trigger_agent = TriggerAgentLLM()
+                prompts["trigger_agent"] = trigger_agent._get_system_prompt()
+            except Exception: pass
+            
+            # Reflection Agent
+            if self.reflection_agent and isinstance(self.reflection_agent, ReflectionAgentLLM):
+                prompts["reflection_agent"] = self.reflection_agent._build_system_prompt()
+            else:
+                try:
+                    reflection_llm = ReflectionAgentLLM()
+                    prompts["reflection_agent"] = reflection_llm._build_system_prompt()
+                except Exception: pass
+            
+            global_state.agent_prompts = prompts
+            log.info(f"📊 LLM metadata updated: {llm_info['provider']} ({llm_info['model']}), {len(prompts)} prompts collected")
+            
+        except Exception as e:
+            log.error(f"Failed to update LLM metadata: {e}")
 
     def _reload_symbols(self):
         """Reload trading symbols from environment/config without restart"""
@@ -404,6 +457,9 @@ class MultiAgentTradingBot:
                         from src.agents.predict_agent import PredictAgent
                         self.predict_agents[symbol] = PredictAgent(symbol=symbol)
                         log.info(f"🆕 Initialized PredictAgent for {symbol}")
+            
+            # Refresh LLM metadata in case config changed
+            self._update_llm_metadata()
 
     def _run_symbol_selector(self, reason: str = "scheduled") -> None:
         """Run symbol selector and update symbols (AUTO1/AUTO3)."""

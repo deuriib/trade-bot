@@ -92,6 +92,10 @@ class SharedState:
     last_agent_message: Dict[str, str] = field(default_factory=dict)
     last_agent_message_cycle: Dict[str, int] = field(default_factory=dict)
     
+    # [NEW] LLM Config & Prompts Display
+    agent_prompts: Dict[str, str] = field(default_factory=dict)
+    llm_info: Dict[str, str] = field(default_factory=dict)
+    
     def update_market(self, symbol: str, price: float, regime: str, position: str):
         self.current_price[symbol] = price
         self.market_regime[symbol] = regime

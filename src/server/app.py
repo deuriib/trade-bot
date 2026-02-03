@@ -311,7 +311,9 @@ async def get_status(authenticated: bool = Depends(verify_auth)):
         "decision_history": global_state.decision_history[:10],
         "trade_history": global_state.trade_history[:200],
         "logs": logs_tail,
-        "logs_simplified": simplified_logs
+        "logs_simplified": simplified_logs,
+        "llm_info": global_state.llm_info,
+        "agent_prompts": global_state.agent_prompts
     }
     return clean_nans(global_state._serialize_obj(data))
 
@@ -570,6 +572,14 @@ async def get_agent_config(authenticated: bool = Depends(verify_auth)):
         agents = config_manager._get_agents_config()
         global_state.agent_config = agents
     return {"agents": agents}
+
+@app.get("/api/agents/prompts")
+async def get_agent_prompts(authenticated: bool = Depends(verify_auth)):
+    """Get current LLM configuration and agent system prompts"""
+    return {
+        "llm_info": global_state.llm_info,
+        "agent_prompts": global_state.agent_prompts
+    }
 
 @app.post("/api/config/prompt")
 async def update_prompt_text(data: dict = Body(...), authenticated: bool = Depends(verify_admin)):
