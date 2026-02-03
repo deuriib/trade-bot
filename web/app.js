@@ -98,6 +98,7 @@ let curveBaselineLabelKey = 'chart.initial';
 let balanceSessionKey = null;
 let baselineLoadedFromStorage = false;
 const BASELINE_STORAGE_PREFIX = 'rtBalanceBaseline:';
+const FIXED_INITIAL_BALANCE = 1000;
 
 const CHART_COLORS = {
     pos: { line: '#00ff9d', fillTop: 'rgba(0, 255, 157, 0.35)', fillBottom: 'rgba(0, 255, 157, 0.02)' },
@@ -600,24 +601,19 @@ function updateDashboard() {
             }
 
             const tradeHistory = Array.isArray(data.trade_history) ? data.trade_history : [];
-            const baseline = curveBaselineBalance ?? balanceSnapshot?.initial ?? initialAmount ?? 0;
+            const baseline = FIXED_INITIAL_BALANCE;
             const tradeCurve = buildBalanceSeriesFromTrades(tradeHistory, baseline);
-            const backendBalanceHistory = data.chart_data && data.chart_data.balance_history ? data.chart_data.balance_history : [];
-            const fallbackCurve = backendBalanceHistory.map(h => ({
-                time: h.time,
-                value: Number(h.balance ?? h.value ?? h.total_equity ?? 0)
-            })).filter(h => Number.isFinite(h.value));
 
             if (tradeCurve.length) {
                 realtimeBalanceHistory = tradeCurve;
-            } else if (fallbackCurve.length) {
-                realtimeBalanceHistory = fallbackCurve;
+            } else {
+                realtimeBalanceHistory = [];
             }
 
-            if (!realtimeBalanceHistory.length && curveBaselineBalance !== null && curveBaselineTime) {
+            if (!realtimeBalanceHistory.length) {
                 realtimeBalanceHistory.push({
-                    time: curveBaselineTime,
-                    value: curveBaselineBalance
+                    time: formatTimestamp(),
+                    value: baseline
                 });
             }
 
@@ -1057,85 +1053,13 @@ function buildBalanceSeriesFromTrades(trades = [], initialBalance = 0) {
     return series;
 }
 
-function computeRealtimeBalance({ account, system, virtualAccount, chartData, positions = [], trades = [] }) {
-    const hasVirtual = system?.is_test_mode && virtualAccount;
-    const hasAccount = !!account;
-    if (!hasVirtual && !hasAccount) return null;
-
-    let initial = 1000;
-    let realized = 0;
-    let unrealized = 0;
-    let totalPnl = 0;
-    let realtimeBalance = 0;
-    const useTrades = Array.isArray(trades) && trades.some(isTradeClosed);
-
-    if (hasVirtual) {
-        const rawInitial = Number(virtualAccount.initial_balance ?? 1000);
-        initial = Number.isFinite(rawInitial) && rawInitial > 0 ? rawInitial : 1000;
-
-        // 🔧 FIX: current_balance 已经包含了已实现 PnL（平仓时 virtual_balance += pnl）
-        // 所以 realized 应该从 current_balance - initial 推算，而不是重复累加
-        const currentBalance = Number(virtualAccount.current_balance ?? initial);
-
-        // 从交易记录计算已实现 PnL（用于显示，不参与余额计算）
-        realized = useTrades ? sumRealizedFromTrades(trades) : (Number(virtualAccount.cumulative_realized_pnl ?? 0) || 0);
-
-        unrealized = sumUnrealizedFromPositions(positions);
-        if (unrealized === 0) {
-            unrealized = Number(virtualAccount.total_unrealized_pnl ?? 0) || 0;
-        }
-
-        // 🔧 FIX: realtimeBalance = current_balance + unrealized（避免重复计算 realized）
-        // totalPnl 从 realtimeBalance 反推，而不是正向加
-        realtimeBalance = currentBalance + unrealized;
-        totalPnl = realtimeBalance - initial;
-    } else if (hasAccount) {
-        const rawInitial = Number(account.initial_balance ?? chartData?.initial_balance ?? 0);
-        initial = Number.isFinite(rawInitial) && rawInitial > 0 ? rawInitial : 1000;
-
-        const totalEquity = Number(account.total_equity ?? NaN);
-        const rawUnrealized = Number(account.unrealized_pnl ?? NaN);
-        if (Number.isFinite(rawUnrealized)) {
-            unrealized = rawUnrealized;
-        } else if (Array.isArray(positions) && positions.length > 0) {
-            unrealized = sumUnrealizedFromPositions(positions);
-        } else {
-            const walletBalance = Number(account.wallet_balance ?? NaN);
-            if (Number.isFinite(totalEquity) && Number.isFinite(walletBalance)) {
-                unrealized = totalEquity - walletBalance;
-            } else {
-                unrealized = 0;
-            }
-        }
-
-        let realizedFromAccount = Number(account.realized_pnl ?? NaN);
-        const totalPnlFromAccount = Number(account.total_pnl ?? (Number.isFinite(totalEquity) ? totalEquity - initial : NaN));
-
-        if (useTrades) {
-            realizedFromAccount = sumRealizedFromTrades(trades);
-        } else {
-            if (!Number.isFinite(realizedFromAccount) && Number.isFinite(totalPnlFromAccount)) {
-                realizedFromAccount = totalPnlFromAccount - unrealized;
-            }
-
-            if (!Number.isFinite(realizedFromAccount) && Array.isArray(trades) && trades.length > 0) {
-                realizedFromAccount = sumRealizedFromTrades(trades);
-            }
-        }
-
-        if (!Number.isFinite(realizedFromAccount)) {
-            realizedFromAccount = 0;
-        }
-        realized = Number.isFinite(realizedFromAccount) ? realizedFromAccount : 0;
-        totalPnl = useTrades ? (realized + unrealized) : (Number.isFinite(totalPnlFromAccount) ? totalPnlFromAccount : (realized + unrealized));
-        if (!useTrades && Number.isFinite(totalEquity)) {
-            realtimeBalance = totalEquity;
-        } else {
-            realtimeBalance = initial + totalPnl;
-        }
-    }
-
-    return { initial, realized, unrealized, totalPnl, realtimeBalance, source: useTrades ? 'trades' : 'account' };
+function computeRealtimeBalance({ trades = [] }) {
+    const initial = FIXED_INITIAL_BALANCE;
+    const realized = sumRealizedFromTrades(trades);
+    const unrealized = 0;
+    const totalPnl = realized;
+    const realtimeBalance = initial + totalPnl;
+    return { initial, realized, unrealized, totalPnl, realtimeBalance, source: 'trades' };
 }
 
 function updateRealtimeBalance({ account, system, virtualAccount, chartData, positions = [], trades = [] }) {
@@ -1165,9 +1089,9 @@ function updateRealtimeBalance({ account, system, virtualAccount, chartData, pos
         setTxt('account-realtime-unrealized', '--');
         return null;
     }
-    const { initial, realized, unrealized, realtimeBalance } = snapshot;
-    const displayInitial = Number.isFinite(curveBaselineBalance) ? curveBaselineBalance : initial;
-    const pnlAmount = realtimeBalance - displayInitial;
+    const { realized, unrealized, realtimeBalance } = snapshot;
+    const displayInitial = FIXED_INITIAL_BALANCE;
+    const pnlAmount = realized;
     const currentBalanceDisplay = displayInitial + pnlAmount;
 
     setTxt('account-realtime-balance', fmt(currentBalanceDisplay));
@@ -1697,6 +1621,7 @@ function updateAgentFramework(system, decision, agents) {
             trigger: { llm: 'Trigger Agent (LLM)', local: 'Trigger Agent', fallback: 'Trigger Agent' },
             reflection: { llm: 'Reflection Agent (LLM)', local: 'Reflection Agent', fallback: 'Reflection Agent' },
             quant_analyst: 'Quant Analyst',
+            multi_period_agent: 'Multi-Period Parser',
             predict_agent: 'Predict Agent',
             bull_agent: 'Bull Perspective',
             bear_agent: 'Bear Perspective',
@@ -1708,6 +1633,7 @@ function updateAgentFramework(system, decision, agents) {
             trigger: { llm: '触发代理(LLM)', local: '触发代理', fallback: '触发代理' },
             reflection: { llm: '复盘代理(LLM)', local: '复盘代理', fallback: '复盘代理' },
             quant_analyst: '量化分析师',
+            multi_period_agent: '多周期解析',
             predict_agent: '预测代理',
             bull_agent: '多头观点',
             bear_agent: '空头观点',
@@ -4404,6 +4330,64 @@ function renderTradeHistory(trades) {
         config.reflection_agent_llm
     );
 
+    const providerKeyMap = {
+        deepseek: 'deepseek_api_key',
+        openai: 'openai_api_key',
+        claude: 'claude_api_key',
+        qwen: 'qwen_api_key',
+        gemini: 'gemini_api_key'
+    };
+
+    const resolveProvider = (config) => {
+        const cfgProvider = config?.llm?.provider;
+        if (cfgProvider && cfgProvider !== 'none' && cfgProvider !== 'disabled') return cfgProvider;
+        const select = document.getElementById('cfg-llm-provider');
+        const selected = select ? select.value : null;
+        if (selected && selected !== 'none' && selected !== 'disabled') return selected;
+        return 'deepseek';
+    };
+
+    const hasMaskedKey = (val) => typeof val === 'string' && val !== '******' && val.includes('...');
+
+    async function ensureLlmApiKey() {
+        try {
+            const res = await apiFetch('/api/config');
+            const cfg = await res.json();
+            const provider = resolveProvider(cfg);
+            const keyField = providerKeyMap[provider] || 'deepseek_api_key';
+            const currentKey = cfg?.api_keys?.[keyField];
+            if (hasMaskedKey(currentKey)) {
+                return provider;
+            }
+
+            const promptLabel = provider.toUpperCase();
+            const keyInput = window.prompt(`Enable LLM: enter ${promptLabel} API key`);
+            if (!keyInput || !keyInput.trim()) return null;
+
+            const payload = {
+                api_keys: {
+                    [keyField]: keyInput.trim()
+                },
+                llm: {
+                    llm_provider: provider
+                }
+            };
+            const saveRes = await apiFetch('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            if (!saveRes.ok) {
+                const errText = await saveRes.text();
+                alert(`Failed to save API key: ${errText}`);
+                return null;
+            }
+            return provider;
+        } catch (err) {
+            console.error('Failed to verify/save LLM key:', err);
+            return null;
+        }
+    }
+
     function syncAgentToggles(config) {
         document.querySelectorAll('input[name="agent-toggle"]').forEach(cb => {
             if (config[cb.value] !== undefined) {
@@ -4510,6 +4494,13 @@ function renderTradeHistory(trades) {
             }
             const current = normalizeAgentConfig(window.agentConfig || {});
             const enableLlm = !isLlmEnabled(current);
+            if (enableLlm) {
+                const okProvider = await ensureLlmApiKey();
+                if (!okProvider) {
+                    console.warn('LLM toggle aborted: API key missing');
+                    return;
+                }
+            }
             const next = {
                 ...current,
                 trend_agent_llm: enableLlm,

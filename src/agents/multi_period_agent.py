@@ -44,14 +44,14 @@ class MultiPeriodParserAgent:
 
         if sign_1h == sign_15m == sign_5m and sign_1h != 0:
             aligned = True
-            alignment_reason = f"三周期强势{'多头' if sign_1h > 0 else '空头'}对齐"
+            alignment_reason = f"All timeframes aligned ({'bull' if sign_1h > 0 else 'bear'})"
         elif sign_1h == sign_15m and sign_1h != 0:
             aligned = True
-            alignment_reason = f"中长周期{'多头' if sign_1h > 0 else '空头'}对齐(1h+15m)"
+            alignment_reason = f"1h+15m aligned ({'bull' if sign_1h > 0 else 'bear'})"
         else:
             aligned = False
             alignment_reason = (
-                f"多周期分歧(1h:{sign_1h}, 15m:{sign_15m}, 5m:{sign_5m})，等待1h确认"
+                f"Misaligned (1h:{sign_1h}, 15m:{sign_15m}, 5m:{sign_5m}) - wait for 1h"
             )
 
         bias = "BULLISH" if sign_1h > 0 else ("BEARISH" if sign_1h < 0 else "NEUTRAL")
@@ -99,5 +99,5 @@ class MultiPeriodParserAgent:
             "summary": summary
         }
 
-        log.info(f"🧭 MultiPeriodParserAgent: {summary}")
+        log.info(f"[MultiPeriodParser] {summary}")
         return result

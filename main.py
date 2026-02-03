@@ -93,7 +93,6 @@ from src.agents import (
     DecisionCoreAgent,
     RiskAuditAgent,
     PositionInfo,
-    SignalWeight,
     ReflectionAgent,
     ReflectionAgentLLM,
     MultiPeriodParserAgent
@@ -1957,11 +1956,19 @@ class MultiAgentTradingBot:
             fast_signal = None
             decision_source = 'llm'
             forced_exit = self._check_forced_exit(current_position_info)
+            llm_enabled = self._is_llm_enabled()
+            if llm_enabled and getattr(self.strategy_engine, 'disable_llm', False):
+                llm_enabled = bool(self.strategy_engine.reload_config())
 
             if forced_exit:
                 decision_source = 'forced_exit'
-                llm_decision = forced_exit
+                decision_payload = forced_exit
                 global_state.add_log(f"[🧯 FORCED EXIT] {forced_exit.get('reasoning', 'Forced close')}")
+                global_state.add_agent_message(
+                    "decision_core",
+                    f"Action: {decision_payload.get('action', '').upper()} | Conf: {decision_payload.get('confidence', 0)}% | Reason: {decision_payload.get('reasoning', '')[:100]}... | Source: FORCED",
+                    level="warning"
+                )
             else:
                 fast_signal = self._detect_fast_trend_signal(processed_dfs.get('5m'))
 
@@ -1993,7 +2000,7 @@ class MultiAgentTradingBot:
                     bull_reason = 'Long bias weak vs momentum'
                     bear_reason = fast_reason
 
-                llm_decision = {
+                decision_payload = {
                     'action': fast_action,
                     'confidence': fast_confidence,
                     'position_size_pct': min(100.0, max(10.0, fast_confidence)),
@@ -2009,51 +2016,109 @@ class MultiAgentTradingBot:
                         'bearish_reasons': bear_reason
                     }
                 }
+                global_state.add_agent_message(
+                    "decision_core",
+                    f"Action: {decision_payload.get('action').upper()} | Conf: {decision_payload.get('confidence')}% | Reason: {decision_payload.get('reasoning')[:100]}... | Source: FAST",
+                    level="info"
+                )
             elif not forced_exit:
-                if not (hasattr(self, '_headless_mode') and self._headless_mode):
-                    print("[Step 3/5] 🧠 DeepSeek LLM - Making decision...")
+                if llm_enabled:
+                    if not (hasattr(self, '_headless_mode') and self._headless_mode):
+                        print("[Step 3/5] 🧠 DeepSeek LLM - Making decision...")
 
-                # Build Context with POSITION INFO
-                market_context_text = self._build_market_context(
-                    quant_analysis=quant_analysis,
-                    predict_result=predict_result,
-                    market_data=market_data,
-                    regime_info=regime_info,
-                    position_info=current_position_info  # ✅ Pass Position Info
-                )
+                    # Build Context with POSITION INFO
+                    market_context_text = self._build_market_context(
+                        quant_analysis=quant_analysis,
+                        predict_result=predict_result,
+                        market_data=market_data,
+                        regime_info=regime_info,
+                        position_info=current_position_info  # ✅ Pass Position Info
+                    )
 
-                market_context_data = {
-                    'symbol': self.current_symbol,
-                    'timestamp': datetime.now().isoformat(),
-                    'current_price': current_price
-                }
+                    market_context_data = {
+                        'symbol': self.current_symbol,
+                        'timestamp': datetime.now().isoformat(),
+                        'current_price': current_price
+                    }
 
-                # 🐂🐻 Parallel Perspectives (Chatroom Mode)
-                log.info("🐂🐻 Gathering Bull/Bear perspectives in PARALLEL...")
-                bull_task = loop.run_in_executor(None, self.strategy_engine.get_bull_perspective, market_context_text)
-                bear_task = loop.run_in_executor(None, self.strategy_engine.get_bear_perspective, market_context_text)
-                
-                bull_p, bear_p = await asyncio.gather(bull_task, bear_task)
-                
-                # Post to Chatroom
-                bull_summary = bull_p.get('bullish_reasons', 'No reasons provided')[:150] + "..."
-                bear_summary = bear_p.get('bearish_reasons', 'No reasons provided')[:150] + "..."
-                global_state.add_agent_message("bull_agent", f"Stance: {bull_p.get('stance')} | Reason: {bull_summary}", level="success")
-                global_state.add_agent_message("bear_agent", f"Stance: {bear_p.get('stance')} | Reason: {bear_summary}", level="warning")
+                    # 🐂🐻 Parallel Perspectives (Chatroom Mode)
+                    log.info("🐂🐻 Gathering Bull/Bear perspectives in PARALLEL...")
+                    bull_task = loop.run_in_executor(None, self.strategy_engine.get_bull_perspective, market_context_text)
+                    bear_task = loop.run_in_executor(None, self.strategy_engine.get_bear_perspective, market_context_text)
 
-                # Call DeepSeek with pre-computed perspectives
-                llm_decision = self.strategy_engine.make_decision(
-                    market_context_text=market_context_text,
-                    market_context_data=market_context_data,
-                    reflection=reflection_text,
-                    bull_perspective=bull_p,
-                    bear_perspective=bear_p
-                )
-                
-                # Post Decision to Chatroom
-                global_state.add_agent_message("decision_core", f"Action: {llm_decision.get('action').upper()} | Conf: {llm_decision.get('confidence')}% | Reason: {llm_decision.get('reasoning')[:100]}...", level="info")
-            
+                    bull_p, bear_p = await asyncio.gather(bull_task, bear_task)
+
+                    # Post to Chatroom
+                    bull_summary = bull_p.get('bullish_reasons', 'No reasons provided')[:150] + "..."
+                    bear_summary = bear_p.get('bearish_reasons', 'No reasons provided')[:150] + "..."
+                    global_state.add_agent_message("bull_agent", f"Stance: {bull_p.get('stance')} | Reason: {bull_summary}", level="success")
+                    global_state.add_agent_message("bear_agent", f"Stance: {bear_p.get('stance')} | Reason: {bear_summary}", level="warning")
+
+                    # Call DeepSeek with pre-computed perspectives
+                    decision_payload = self.strategy_engine.make_decision(
+                        market_context_text=market_context_text,
+                        market_context_data=market_context_data,
+                        reflection=reflection_text,
+                        bull_perspective=bull_p,
+                        bear_perspective=bear_p
+                    )
+
+                    # Post Decision to Chatroom
+                    global_state.add_agent_message(
+                        "decision_core",
+                        f"Action: {decision_payload.get('action').upper()} | Conf: {decision_payload.get('confidence')}% | Reason: {decision_payload.get('reasoning')[:100]}...",
+                        level="info"
+                    )
+                else:
+                    if not (hasattr(self, '_headless_mode') and self._headless_mode):
+                        print("[Step 3/5] ⚖️ DecisionCore - Rule-based decision...")
+                    decision_source = 'decision_core'
+                    vote_core = await self.decision_core.make_decision(
+                        quant_analysis=quant_analysis,
+                        predict_result=predict_result,
+                        market_data=market_data
+                    )
+                    size_pct = 0.0
+                    if vote_core.trade_params and self.max_position_size:
+                        size_pct = min(
+                            100.0,
+                            max(5.0, (vote_core.trade_params.get('position_size', 0) / self.max_position_size) * 100)
+                        )
+                    decision_payload = {
+                        'action': vote_core.action,
+                        'confidence': vote_core.confidence,
+                        'position_size_pct': size_pct,
+                        'reasoning': vote_core.reason,
+                        'bull_perspective': {
+                            'bull_confidence': 50,
+                            'stance': 'NEUTRAL',
+                            'bullish_reasons': 'LLM disabled'
+                        },
+                        'bear_perspective': {
+                            'bear_confidence': 50,
+                            'stance': 'NEUTRAL',
+                            'bearish_reasons': 'LLM disabled'
+                        }
+                    }
+                    global_state.add_agent_message(
+                        "decision_core",
+                        f"Action: {decision_payload.get('action').upper()} | Conf: {decision_payload.get('confidence')}% | Reason: {decision_payload.get('reasoning')[:100]}... | Source: RULE",
+                        level="info"
+                    )
+
             # ... Rest of logic stays similar ...
+            if 'bull_perspective' not in decision_payload:
+                decision_payload['bull_perspective'] = {
+                    'bull_confidence': 50,
+                    'stance': 'NEUTRAL',
+                    'bullish_reasons': 'N/A'
+                }
+            if 'bear_perspective' not in decision_payload:
+                decision_payload['bear_perspective'] = {
+                    'bear_confidence': 50,
+                    'stance': 'NEUTRAL',
+                    'bearish_reasons': 'N/A'
+                }
             
             # 转换为 VoteResult 兼容格式
             # (Need to check if i need to include rest of the function)
@@ -2070,7 +2135,7 @@ class MultiAgentTradingBot:
             
             # Construct vote_details similar to DecisionCore
             vote_details = {
-                'deepseek': llm_decision.get('confidence', 0),
+                'deepseek': decision_payload.get('confidence', 0),
                 'strategist_total': q_comp.get('score', 0),
                 # Trend
                 'trend_1h': q_trend.get('trend_1h_score', 0),
@@ -2085,12 +2150,12 @@ class MultiAgentTradingBot:
                 # Prophet
                 'prophet': predict_result.probability_up if predict_result else 0.5,
                 # 🐂🐻 Bullish/Bearish Perspective Analysis
-                'bull_confidence': llm_decision.get('bull_perspective', {}).get('bull_confidence', 50),
-                'bear_confidence': llm_decision.get('bear_perspective', {}).get('bear_confidence', 50),
-                'bull_stance': llm_decision.get('bull_perspective', {}).get('stance', 'UNKNOWN'),
-                'bear_stance': llm_decision.get('bear_perspective', {}).get('stance', 'UNKNOWN'),
-                'bull_reasons': llm_decision.get('bull_perspective', {}).get('bullish_reasons', ''),
-                'bear_reasons': llm_decision.get('bear_perspective', {}).get('bearish_reasons', '')
+                'bull_confidence': decision_payload.get('bull_perspective', {}).get('bull_confidence', 50),
+                'bear_confidence': decision_payload.get('bear_perspective', {}).get('bear_confidence', 50),
+                'bull_stance': decision_payload.get('bull_perspective', {}).get('stance', 'UNKNOWN'),
+                'bear_stance': decision_payload.get('bear_perspective', {}).get('stance', 'UNKNOWN'),
+                'bull_reasons': decision_payload.get('bull_perspective', {}).get('bullish_reasons', ''),
+                'bear_reasons': decision_payload.get('bear_perspective', {}).get('bearish_reasons', '')
             }
 
             if fast_signal:
@@ -2103,10 +2168,10 @@ class MultiAgentTradingBot:
             regime_desc = SemanticConverter.get_trend_semantic(trend_score_total)
             
             # Determine Position details from LLM Decision
-            pos_pct = llm_decision.get('position_size_pct', 0)
-            if not pos_pct and llm_decision.get('position_size_usd') and self.max_position_size:
+            pos_pct = decision_payload.get('position_size_pct', 0)
+            if not pos_pct and decision_payload.get('position_size_usd') and self.max_position_size:
                  # Fallback: estimate pct if usd is provided
-                 pos_pct = (llm_decision.get('position_size_usd') / self.max_position_size) * 100
+                 pos_pct = (decision_payload.get('position_size_usd') / self.max_position_size) * 100
                  # Clamp to reasonable range (仓位大小不应超过100%)
                  pos_pct = min(pos_pct, 100)
             
@@ -2116,15 +2181,15 @@ class MultiAgentTradingBot:
             price_position_info = regime_result.get('position', {}) if regime_result else {}
             
             vote_result = VoteResult(
-                action=llm_decision.get('action', 'wait'),
-                confidence=llm_decision.get('confidence', 0),
-                weighted_score=llm_decision.get('confidence', 0) - 50,  # -50 to +50
+                action=decision_payload.get('action', 'wait'),
+                confidence=decision_payload.get('confidence', 0),
+                weighted_score=decision_payload.get('confidence', 0) - 50,  # -50 to +50
                 vote_details=vote_details,
                 multi_period_aligned=True,
-                reason=llm_decision.get('reasoning', 'DeepSeek LLM decision'),
+                reason=decision_payload.get('reasoning', 'DeepSeek LLM decision'),
                 regime={
                     'regime': regime_desc,
-                    'confidence': llm_decision.get('confidence', 0)
+                    'confidence': decision_payload.get('confidence', 0)
                 },
                 position=price_position_info  # 使用真正的价格位置信息
             )
@@ -2143,20 +2208,20 @@ class MultiAgentTradingBot:
 📤 INPUT (PROMPT)
 --------------------------------------------------------------------------------
 [SYSTEM PROMPT]
-{llm_decision.get('system_prompt', '(Missing System Prompt)')}
+{decision_payload.get('system_prompt', '(Missing System Prompt)')}
 
 [USER PROMPT]
-{llm_decision.get('user_prompt', '(Missing User Prompt)')}
+{decision_payload.get('user_prompt', '(Missing User Prompt)')}
 
 --------------------------------------------------------------------------------
 🧠 PROCESSING (REASONING)
 --------------------------------------------------------------------------------
-{llm_decision.get('reasoning_detail', '(No reasoning detail)')}
+{decision_payload.get('reasoning_detail', '(No reasoning detail)')}
 
 --------------------------------------------------------------------------------
 📥 OUTPUT (DECISION)
 --------------------------------------------------------------------------------
-{llm_decision.get('raw_response', '(No raw response)')}
+{decision_payload.get('raw_response', '(No raw response)')}
 """
                 self.saver.save_llm_log(
                     content=full_log_content,
@@ -2166,18 +2231,18 @@ class MultiAgentTradingBot:
                 )
             
             # LOG: Bullish/Bearish Perspective (show first for adversarial context)
-            bull_conf = llm_decision.get('bull_perspective', {}).get('bull_confidence', 50)
-            bear_conf = llm_decision.get('bear_perspective', {}).get('bear_confidence', 50)
-            bull_stance = llm_decision.get('bull_perspective', {}).get('stance', 'UNKNOWN')
-            bear_stance = llm_decision.get('bear_perspective', {}).get('stance', 'UNKNOWN')
-            bull_reasons = llm_decision.get('bull_perspective', {}).get('bullish_reasons', '')[:120]
-            bear_reasons = llm_decision.get('bear_perspective', {}).get('bearish_reasons', '')[:120]
+            bull_conf = decision_payload.get('bull_perspective', {}).get('bull_confidence', 50)
+            bear_conf = decision_payload.get('bear_perspective', {}).get('bear_confidence', 50)
+            bull_stance = decision_payload.get('bull_perspective', {}).get('stance', 'UNKNOWN')
+            bear_stance = decision_payload.get('bear_perspective', {}).get('stance', 'UNKNOWN')
+            bull_reasons = decision_payload.get('bull_perspective', {}).get('bullish_reasons', '')[:120]
+            bear_reasons = decision_payload.get('bear_perspective', {}).get('bearish_reasons', '')[:120]
             global_state.add_log(f"[🐂 Long Case] [{bull_stance}] Conf={bull_conf}%")
             global_state.add_log(f"[🐻 Short Case] [{bear_stance}] Conf={bear_conf}%")
             
             # LOG: Decision Engine (LLM or Fast trend)
-            decision_label = "FAST Decision" if decision_source == 'fast_trend' else "Final Decision"
-            global_state.add_log(f"[⚖️ {decision_label}] Action={vote_result.action.upper()} | Conf={llm_decision.get('confidence', 0)}%")
+            decision_label = "FAST Decision" if decision_source == 'fast_trend' else ("RULE Decision" if decision_source == 'decision_core' else "Final Decision")
+            global_state.add_log(f"[⚖️ {decision_label}] Action={vote_result.action.upper()} | Conf={decision_payload.get('confidence', 0)}%")
             
             # ✅ Decision Recording moved after Risk Audit for complete context
             # Saved to file still happens here for "raw" decision
@@ -3372,7 +3437,28 @@ class MultiAgentTradingBot:
             anomalies = ', '.join(global_state.four_layer_result.get('data_anomalies', []))
             context += f"\n\n⚠️ **DATA ANOMALY**: {anomalies}"
 
-        context += "\n\n## 3. Detailed Market Analysis\n"
+        # Multi-Period Parser Summary
+        multi_period = getattr(global_state, 'multi_period_result', {}) or {}
+        if multi_period:
+            trend_scores = multi_period.get('trend_scores', {}) or {}
+            four_layer = multi_period.get('four_layer', {}) or {}
+            layer_pass = four_layer.get('layer_pass', {}) or {}
+            context += "\n\n## 3. Multi-Period Parser\n"
+            context += (
+                f"- Alignment: {multi_period.get('alignment_reason', 'N/A')}\n"
+                f"- Bias: {multi_period.get('bias', 'N/A')}\n"
+                f"- Trend Scores (1h/15m/5m): "
+                f"{trend_scores.get('trend_1h', 0):+.0f}/"
+                f"{trend_scores.get('trend_15m', 0):+.0f}/"
+                f"{trend_scores.get('trend_5m', 0):+.0f}\n"
+                f"- Four-Layer: {four_layer.get('final_action', 'WAIT')} "
+                f"(L1:{'Y' if layer_pass.get('L1') else 'N'}, "
+                f"L2:{'Y' if layer_pass.get('L2') else 'N'}, "
+                f"L3:{'Y' if layer_pass.get('L3') else 'N'}, "
+                f"L4:{'Y' if layer_pass.get('L4') else 'N'})"
+            )
+
+        context += "\n\n## 4. Detailed Market Analysis\n"
         
         # Extract analysis results
         trend_result = getattr(global_state, 'semantic_analyses', {}).get('trend', {})

@@ -382,6 +382,22 @@ textarea:focus {
     overflow: hidden;
 }
 
+.agent-framework-layout.chatroom-only {
+    display: flex;
+    width: 100%;
+}
+
+.chatroom-panel.full {
+    width: 100%;
+}
+
+.chatroom-title {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .chatroom-messages {
     flex: 1;
     overflow-y: auto;
@@ -425,6 +441,12 @@ textarea:focus {
 .chat-bubble.predict_agent {
     background: rgba(186, 104, 200, 0.1);
     border-left: 4px solid #ba68c8;
+    align-self: flex-start;
+}
+
+.chat-bubble.multi_period_agent {
+    background: rgba(66, 153, 225, 0.12);
+    border-left: 4px solid #4299e1;
     align-self: flex-start;
 }
 

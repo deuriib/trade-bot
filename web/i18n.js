@@ -132,7 +132,7 @@ const i18n = {
         'agent.card.reflection': 'Reflection Agent',
 
         // Framework Labels
-        'framework.subtitle': 'Signal -> Audit -> Execute',
+        'framework.subtitle': 'Agents report → Decision agent concludes',
         'framework.layer.data': '📡 Data Layer',
         'framework.layer.analysis': '📊 Analysis Layer',
         'framework.layer.strategy': '🧠 Semantic Strategy Layer',
@@ -498,7 +498,7 @@ const i18n = {
         'agent.card.reflection': '复盘代理',
 
         // Framework Labels
-        'framework.subtitle': '信号 -> 审计 -> 执行',
+        'framework.subtitle': '代理汇报 → 决策代理收敛',
         'framework.layer.data': '📡 数据层',
         'framework.layer.analysis': '📊 分析层',
         'framework.layer.strategy': '🧠 语义策略层',
