@@ -4583,7 +4583,7 @@ function renderTradeHistory(trades) {
             { id: 'multi_period', label: '🧭 Multi-Period Parser', hasPrompt: false },
             { id: 'reflection_agent', label: '🧠 Reflection Agent', hasPrompt: true },
             { id: 'risk_audit', label: '🛡️ Risk Audit', hasPrompt: false },
-            { id: 'decision_core', label: '⚖️ Decision Core', hasPrompt: true }
+            { id: 'decision_core', label: '⚖️ Decision Core', hasPrompt: true, required: true }
         ];
 
         let agentSettings = { agents: {} };
@@ -4723,13 +4723,14 @@ function renderTradeHistory(trades) {
             const promptText = draft?.promptText ?? (agentSettings.agents[agentId].system_prompt || '');
             const enabledValue = draft?.enabled ?? agentEnabled?.[agentId];
             const isEnabled = enabledValue === undefined ? true : Boolean(enabledValue);
+            const isRequired = Boolean(def?.required);
 
             panelContainer.innerHTML = `
             <div class="agent-config-section">
                 <h4>${def?.label || agentId}</h4>
                 <div class="agent-config-row agent-config-toggle-row">
-                    <label>Enable Agent</label>
-                    <input type="checkbox" data-field="enabled" ${isEnabled ? 'checked' : ''} />
+                    <label>Enable Agent${isRequired ? ' (Required)' : ''}</label>
+                    <input type="checkbox" data-field="enabled" ${isEnabled ? 'checked' : ''} ${isRequired ? 'disabled' : ''} />
                 </div>
                 <div class="agent-config-row">
                     <label>Parameters (JSON)</label>
@@ -4771,7 +4772,7 @@ function renderTradeHistory(trades) {
                 const base = agentSettings.agents[def.id] || { params: {}, system_prompt: '' };
                 const paramsRaw = draft?.paramsText ?? JSON.stringify(base.params || {}, null, 2);
                 const promptRaw = (draft?.promptText ?? base.system_prompt) || '';
-                if (draft?.enabled !== undefined) {
+                if (draft?.enabled !== undefined && !def.required) {
                     enabledPayload[def.id] = draft.enabled;
                 }
                 let parsedParams = {};
