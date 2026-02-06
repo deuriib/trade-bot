@@ -2095,6 +2095,14 @@ class MultiAgentTradingBot:
                 global_state.multi_period_result = {}
 
             # Step 3: Decision (Fast trend first, then LLM fallback)
+            selected_agent_outputs = self._collect_selected_agent_outputs(
+                predict_result=predict_result,
+                reflection_text=reflection_text
+            )
+            # Inject selected agent outputs into Decision Core input
+            if isinstance(quant_analysis, dict):
+                quant_analysis['agent_outputs'] = selected_agent_outputs
+
             market_data = {
                 'df_5m': processed_dfs['5m'],
                 'df_15m': processed_dfs['15m'],
@@ -2192,7 +2200,8 @@ class MultiAgentTradingBot:
                         predict_result=predict_result,
                         market_data=market_data,
                         regime_info=regime_info,
-                        position_info=current_position_info  # ✅ Pass Position Info
+                        position_info=current_position_info,  # ✅ Pass Position Info
+                        selected_agent_outputs=selected_agent_outputs
                     )
 
                     market_context_data = {
@@ -3471,11 +3480,71 @@ class MultiAgentTradingBot:
         except Exception as e:
             log.error(f"Order execution failed: {e}", exc_info=True)
             return False
+
+    def _format_agent_output_for_context(self, key: str, value: Any) -> str:
+        import json
+        try:
+            payload = json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:
+            payload = str(value)
+        if len(payload) > 800:
+            payload = payload[:800] + "...(truncated)"
+        return f"- {key}: {payload}\n"
+
+    def _collect_selected_agent_outputs(
+        self,
+        predict_result=None,
+        reflection_text: Optional[str] = None
+    ) -> Dict[str, Any]:
+        outputs: Dict[str, Any] = {}
+
+        if getattr(self.agent_config, 'symbol_selector_agent', False):
+            if getattr(global_state, 'symbol_selector', None):
+                outputs['symbol_selector'] = global_state.symbol_selector
+
+        if getattr(self.agent_config, 'predict_agent', False) and predict_result:
+            try:
+                outputs['predict_agent'] = asdict(predict_result)
+            except Exception:
+                outputs['predict_agent'] = getattr(predict_result, '__dict__', str(predict_result))
+
+        semantic = getattr(global_state, 'semantic_analyses', {}) or {}
+
+        if self.agent_config.trend_agent_llm or self.agent_config.trend_agent_local:
+            if 'trend' in semantic:
+                outputs['trend_agent'] = semantic.get('trend')
+        if self.agent_config.setup_agent_llm or self.agent_config.setup_agent_local:
+            if 'setup' in semantic:
+                outputs['setup_agent'] = semantic.get('setup')
+        if self.agent_config.trigger_agent_llm or self.agent_config.trigger_agent_local:
+            if 'trigger' in semantic:
+                outputs['trigger_agent'] = semantic.get('trigger')
+
+        if self.agent_config.reflection_agent_llm or self.agent_config.reflection_agent_local:
+            outputs['reflection_agent'] = {
+                'count': getattr(global_state, 'reflection_count', 0),
+                'text': reflection_text,
+                'raw': getattr(global_state, 'last_reflection', None)
+            }
+
+        multi_period = getattr(global_state, 'multi_period_result', {}) or {}
+        if multi_period:
+            outputs['multi_period_agent'] = multi_period
+
+        return outputs
     
     
     
 
-    def _build_market_context(self, quant_analysis: Dict, predict_result, market_data: Dict, regime_info: Dict = None, position_info: Dict = None) -> str:
+    def _build_market_context(
+        self,
+        quant_analysis: Dict,
+        predict_result,
+        market_data: Dict,
+        regime_info: Dict = None,
+        position_info: Dict = None,
+        selected_agent_outputs: Optional[Dict] = None
+    ) -> str:
         """
         构建 DeepSeek LLM 所需的市场上下文文本
         """
@@ -3550,6 +3619,7 @@ class MultiAgentTradingBot:
         # Helper to format values safely
         def fmt_val(val, fmt="{:.2f}"):
             return fmt.format(val) if val is not None else "N/A"
+
             
         # 构建持仓信息文本 (New)
         position_section = ""
@@ -3622,8 +3692,10 @@ class MultiAgentTradingBot:
             anomalies = ', '.join(global_state.four_layer_result.get('data_anomalies', []))
             context += f"\n\n⚠️ **DATA ANOMALY**: {anomalies}"
 
-        # Multi-Period Parser Summary
-        multi_period = getattr(global_state, 'multi_period_result', {}) or {}
+        # Multi-Period Parser Summary (only if selected)
+        multi_period = None
+        if selected_agent_outputs and selected_agent_outputs.get('multi_period_agent'):
+            multi_period = selected_agent_outputs.get('multi_period_agent') or {}
         if multi_period:
             trend_scores = multi_period.get('trend_scores', {}) or {}
             four_layer = multi_period.get('four_layer', {}) or {}
@@ -3643,12 +3715,26 @@ class MultiAgentTradingBot:
                 f"L4:{'Y' if layer_pass.get('L4') else 'N'})"
             )
 
-        context += "\n\n## 4. Detailed Market Analysis\n"
+        # Selected agent outputs (explicitly inject for Decision Core)
+        if selected_agent_outputs:
+            context += "\n\n## 4. Selected Agent Outputs (Enabled)\n"
+            for key, val in selected_agent_outputs.items():
+                context += self._format_agent_output_for_context(key, val)
+
+        context += "\n\n## 5. Detailed Market Analysis\n"
         
-        # Extract analysis results
-        trend_result = getattr(global_state, 'semantic_analyses', {}).get('trend', {})
-        setup_result = getattr(global_state, 'semantic_analyses', {}).get('setup', {})
-        trigger_result = getattr(global_state, 'semantic_analyses', {}).get('trigger', {})
+        # Extract analysis results (respect selected agents)
+        trend_result = {}
+        setup_result = {}
+        trigger_result = {}
+        if selected_agent_outputs:
+            trend_result = selected_agent_outputs.get('trend_agent', {})
+            setup_result = selected_agent_outputs.get('setup_agent', {})
+            trigger_result = selected_agent_outputs.get('trigger_agent', {})
+        else:
+            trend_result = getattr(global_state, 'semantic_analyses', {}).get('trend', {})
+            setup_result = getattr(global_state, 'semantic_analyses', {}).get('setup', {})
+            trigger_result = getattr(global_state, 'semantic_analyses', {}).get('trigger', {})
         
         # Trend Analysis (formerly TREND AGENT)
         if isinstance(trend_result, dict):
