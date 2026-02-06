@@ -94,9 +94,7 @@ async def login(response: Response, data: LoginRequest):
     # 1. Admin Login: Password matches WEB_PASSWORD or hardcoded known admin passwords
     if data.password == WEB_PASSWORD or data.password == "admin" or data.password == "EthanAlgoX":
         role = 'admin'
-    # 2. User Login: Password is 'guest' OR Empty -> Read Only
-    elif not data.password or data.password == "guest":
-        role = 'user'
+    # 2. No guest/read-only mode: any non-admin password is invalid
 
     if role:
         session_id = secrets.token_urlsafe(32)
