@@ -3644,14 +3644,15 @@ class MultiAgentTradingBot:
 """
         
         context = f"""
-## 1. Price & Position Overview
+## 1. Snapshot
 - Symbol: {self.current_symbol}
-- Current Price: ${current_price:,.2f}
-
-{position_section}
-
-## 2. Four-Layer Strategy Status
+- Price: ${current_price:,.2f}
 """
+
+        if position_section:
+            context += f"\n{position_section}\n"
+
+        context += "\n## 2. Four-Layer Status\n"
         # Build four-layer status summary with smart grouping
         blocking_reason = global_state.four_layer_result.get('blocking_reason', 'None')
         layer1_pass = global_state.four_layer_result.get('layer1_pass')
@@ -3700,11 +3701,11 @@ class MultiAgentTradingBot:
             trend_scores = multi_period.get('trend_scores', {}) or {}
             four_layer = multi_period.get('four_layer', {}) or {}
             layer_pass = four_layer.get('layer_pass', {}) or {}
-            context += "\n\n## 3. Multi-Period Parser\n"
+            context += "\n\n## 3. Multi-Period\n"
             context += (
                 f"- Alignment: {multi_period.get('alignment_reason', 'N/A')}\n"
                 f"- Bias: {multi_period.get('bias', 'N/A')}\n"
-                f"- Trend Scores (1h/15m/5m): "
+                f"- Trend(1h/15m/5m): "
                 f"{trend_scores.get('trend_1h', 0):+.0f}/"
                 f"{trend_scores.get('trend_15m', 0):+.0f}/"
                 f"{trend_scores.get('trend_5m', 0):+.0f}\n"
@@ -3717,11 +3718,11 @@ class MultiAgentTradingBot:
 
         # Selected agent outputs (explicitly inject for Decision Core)
         if selected_agent_outputs:
-            context += "\n\n## 4. Selected Agent Outputs (Enabled)\n"
+            context += "\n\n## 4. Enabled Agent Outputs (Compact)\n"
             for key, val in selected_agent_outputs.items():
                 context += self._format_agent_output_for_context(key, val)
 
-        context += "\n\n## 5. Detailed Market Analysis\n"
+        context += "\n\n## 5. Market Summary\n"
         
         # Extract analysis results (respect selected agents)
         trend_result = {}
@@ -3736,39 +3737,28 @@ class MultiAgentTradingBot:
             setup_result = getattr(global_state, 'semantic_analyses', {}).get('setup', {})
             trigger_result = getattr(global_state, 'semantic_analyses', {}).get('trigger', {})
         
-        # Trend Analysis (formerly TREND AGENT)
         if isinstance(trend_result, dict):
-            trend_analysis = trend_result.get('analysis', 'Not available')
             trend_stance = trend_result.get('stance', 'UNKNOWN')
             trend_meta = trend_result.get('metadata', {})
-            trend_header = f"### 🔮 Trend & Direction Analysis [{trend_stance}] (Strength: {trend_meta.get('strength', 'N/A')}, ADX: {trend_meta.get('adx', 'N/A')})"
+            trend_line = f"- Trend: {trend_stance} | Strength={trend_meta.get('strength', 'N/A')} | ADX={trend_meta.get('adx', 'N/A')}"
         else:
-            trend_analysis = trend_result if trend_result else 'Not available'
-            trend_header = "🔮 Trend & Direction Analysis"
-            
-        # Entry Zone Analysis (formerly SETUP AGENT)
+            trend_line = "- Trend: N/A"
+
         if isinstance(setup_result, dict):
-            setup_analysis = setup_result.get('analysis', 'Not available')
             setup_stance = setup_result.get('stance', 'UNKNOWN')
             setup_meta = setup_result.get('metadata', {})
-            setup_header = f"### 📊 Entry Zone Analysis [{setup_stance}] (Zone: {setup_meta.get('zone', 'N/A')}, KDJ: {setup_meta.get('kdj_j', 'N/A')})"
+            setup_line = f"- Setup: {setup_stance} | Zone={setup_meta.get('zone', 'N/A')} | KDJ={setup_meta.get('kdj_j', 'N/A')} | MACD={setup_meta.get('macd_signal', 'N/A')}"
         else:
-            setup_analysis = setup_result if setup_result else 'Not available'
-            setup_header = "### 📊 Entry Zone Analysis"
+            setup_line = "- Setup: N/A"
 
-        # Entry Timing Signal (formerly TRIGGER AGENT)
         if isinstance(trigger_result, dict):
-            trigger_analysis = trigger_result.get('analysis', 'Not available')
             trigger_stance = trigger_result.get('stance', 'UNKNOWN')
             trigger_meta = trigger_result.get('metadata', {})
-            trigger_header = f"### ⚡ Entry Timing Signal [{trigger_stance}] (Pattern: {trigger_meta.get('pattern', 'NONE')}, RVOL: {trigger_meta.get('rvol', 'N/A')}x)"
+            trigger_line = f"- Trigger: {trigger_stance} | Pattern={trigger_meta.get('pattern', 'NONE')} | RVOL={trigger_meta.get('rvol', 'N/A')}x"
         else:
-            trigger_analysis = trigger_result if trigger_result else 'Not available'
-            trigger_header = "### ⚡ Entry Timing Signal"
+            trigger_line = "- Trigger: N/A"
 
-        context += f"\n{trend_header}\n{trend_analysis}\n"
-        context += f"\n{setup_header}\n{setup_analysis}\n"
-        context += f"\n{trigger_header}\n{trigger_analysis}\n"
+        context += f"{trend_line}\n{setup_line}\n{trigger_line}\n"
         
         # Note: Market Regime and Price Position are already calculated by TREND and SETUP agents
         # and included in their respective analyses above, so we don't duplicate them here.
