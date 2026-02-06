@@ -12,6 +12,7 @@ import httpx
 import time
 
 from src.llm.metrics import record_error, record_request, record_success
+import re
 
 
 @dataclass
@@ -97,6 +98,20 @@ class BaseLLMClient(ABC):
     def _messages_to_list(self, messages: List[ChatMessage]) -> List[Dict[str, str]]:
         """将 ChatMessage 列表转换为字典列表"""
         return [{"role": m.role, "content": m.content} for m in messages]
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Rough token estimator when provider usage is unavailable."""
+        if not text:
+            return 0
+        cjk_count = len(re.findall(r'[\u4e00-\u9fff]', text))
+        non_cjk = len(text) - cjk_count
+        return cjk_count + max(0, int(non_cjk / 4))
+
+    def _estimate_prompt_tokens(self, messages: List[ChatMessage]) -> int:
+        total = 0
+        for msg in messages:
+            total += self._estimate_tokens(msg.content)
+        return total
     
     def chat(
         self, 
@@ -144,12 +159,28 @@ class BaseLLMClient(ABC):
         for attempt in range(self.config.max_retries):
             try:
                 record_request(self.PROVIDER, self.model)
+                est_prompt_tokens = self._estimate_prompt_tokens(messages)
                 start_ts = time.time()
                 response = self.client.post(url, json=body, headers=headers)
                 response.raise_for_status()
                 parsed = self._parse_response(response.json())
+                usage = parsed.usage or {}
+                prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+                completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+                total_tokens = int(usage.get("total_tokens", 0) or 0)
+                if total_tokens <= 0:
+                    if prompt_tokens <= 0:
+                        prompt_tokens = est_prompt_tokens
+                    if completion_tokens <= 0:
+                        completion_tokens = self._estimate_tokens(parsed.content or "")
+                    total_tokens = prompt_tokens + completion_tokens
+                    parsed.usage = {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": total_tokens
+                    }
                 latency_ms = int((time.time() - start_ts) * 1000)
-                record_success(self.PROVIDER, self.model, latency_ms)
+                record_success(self.PROVIDER, self.model, latency_ms, parsed.usage)
                 return parsed
             except httpx.HTTPStatusError as e:
                 last_error = e

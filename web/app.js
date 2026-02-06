@@ -4708,6 +4708,8 @@ function renderTradeHistory(trades) {
                 renderAgentTabs();
                 renderAgentPanel(activeAgentId);
                 updateLlmBadge(data?.llm_info);
+                updateLlmMetrics(data?.llm_info, data?.llm_metrics);
+                updateLlmMetrics(data?.llm_info, data?.llm_metrics);
             } catch (err) {
                 console.error('Failed to load agent settings:', err);
                 renderAgentTabs();
@@ -4875,11 +4877,85 @@ function renderTradeHistory(trades) {
         }
     }
 
+        function updateLlmMetrics(llmInfo, metrics) {
+            const elTokens = document.getElementById('llm-metrics-tokens');
+            const elTotal = document.getElementById('llm-metrics-total');
+            const elSpeed = document.getElementById('llm-metrics-speed');
+            const elLatency = document.getElementById('llm-metrics-latency');
+            if (!elTokens && !elTotal && !elSpeed && !elLatency) return;
+
+            if (!llmInfo || !llmInfo.provider || llmInfo.provider === 'None') {
+                if (elTokens) elTokens.textContent = '--/--';
+                if (elTotal) elTotal.textContent = '--';
+                if (elSpeed) elSpeed.textContent = '-- tps';
+                if (elLatency) elLatency.textContent = '--/--/-- ms';
+                return;
+            }
+            const providerKey = (llmInfo.provider || '').toLowerCase();
+            const providerStats = metrics?.providers?.[providerKey];
+            if (!providerStats) {
+                if (elTokens) elTokens.textContent = '--/--';
+                if (elTotal) elTotal.textContent = '--';
+                if (elSpeed) elSpeed.textContent = '-- tps';
+                if (elLatency) elLatency.textContent = '--/--/-- ms';
+                return;
+            }
+            const inTok = providerStats.total_input_tokens ?? 0;
+            const outTok = providerStats.total_output_tokens ?? 0;
+            const totalTok = providerStats.total_tokens ?? (inTok + outTok);
+            const tps = providerStats.token_speed_tps ?? 0;
+            const minMs = providerStats.min_latency_ms ?? 0;
+            const avgMs = providerStats.avg_latency_ms ?? 0;
+            const maxMs = providerStats.max_latency_ms ?? 0;
+            if (elTokens) elTokens.textContent = `${inTok}/${outTok}`;
+            if (elTotal) elTotal.textContent = `${totalTok}`;
+            if (elSpeed) elSpeed.textContent = `${tps} tps`;
+            if (elLatency) elLatency.textContent = `${minMs}/${avgMs}/${maxMs} ms`;
+        }
+
+        function updateLlmMetrics(llmInfo, metrics) {
+            const elTokens = document.getElementById('llm-metrics-tokens');
+            const elTotal = document.getElementById('llm-metrics-total');
+            const elSpeed = document.getElementById('llm-metrics-speed');
+            const elLatency = document.getElementById('llm-metrics-latency');
+            if (!elTokens && !elTotal && !elSpeed && !elLatency) return;
+
+            if (!llmInfo || !llmInfo.provider || llmInfo.provider === 'None') {
+                if (elTokens) elTokens.textContent = '--/--';
+                if (elTotal) elTotal.textContent = '--';
+                if (elSpeed) elSpeed.textContent = '-- tps';
+                if (elLatency) elLatency.textContent = '--/--/-- ms';
+                return;
+            }
+            const providerKey = (llmInfo.provider || '').toLowerCase();
+            const providerStats = metrics?.providers?.[providerKey];
+            if (!providerStats) {
+                if (elTokens) elTokens.textContent = '--/--';
+                if (elTotal) elTotal.textContent = '--';
+                if (elSpeed) elSpeed.textContent = '-- tps';
+                if (elLatency) elLatency.textContent = '--/--/-- ms';
+                return;
+            }
+            const inTok = providerStats.total_input_tokens ?? 0;
+            const outTok = providerStats.total_output_tokens ?? 0;
+            const totalTok = providerStats.total_tokens ?? (inTok + outTok);
+            const tps = providerStats.token_speed_tps ?? 0;
+            const minMs = providerStats.min_latency_ms ?? 0;
+            const avgMs = providerStats.avg_latency_ms ?? 0;
+            const maxMs = providerStats.max_latency_ms ?? 0;
+            if (elTokens) elTokens.textContent = `${inTok}/${outTok}`;
+            if (elTotal) elTotal.textContent = `${totalTok}`;
+            if (elSpeed) elSpeed.textContent = `${tps} tps`;
+            if (elLatency) elLatency.textContent = `${minMs}/${avgMs}/${maxMs} ms`;
+        }
+
         async function refreshLlmBadge() {
             try {
                 const res = await fetch('/api/agents/settings', { credentials: 'include' });
                 const data = await res.json();
                 updateLlmBadge(data?.llm_info);
+                updateLlmMetrics(data?.llm_info, data?.llm_metrics);
+                updateLlmMetrics(data?.llm_info, data?.llm_metrics);
             } catch (err) {
                 console.warn('Failed to update LLM badge:', err);
             }
