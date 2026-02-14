@@ -3623,6 +3623,22 @@ function updateLogModeUI() {
     }
 }
 
+function updateLlmProviderKeyFields(provider) {
+    const activeProvider = provider || 'none';
+    const fields = document.querySelectorAll('.llm-key-field');
+    fields.forEach((field) => {
+        const fieldProvider = field.getAttribute('data-provider');
+        field.style.display = fieldProvider === activeProvider ? '' : 'none';
+    });
+}
+
+function initLlmProviderSelector() {
+    const providerSel = document.getElementById('cfg-llm-provider');
+    if (!providerSel) return;
+    providerSel.onchange = () => updateLlmProviderKeyFields(providerSel.value);
+    updateLlmProviderKeyFields(providerSel.value);
+}
+
 /* Settings Modal Logic */
 function initSettings() {
     const modal = document.getElementById('settings-modal');
@@ -3729,6 +3745,8 @@ function initSettings() {
         });
     });
 
+    initLlmProviderSelector();
+
     // Prompt Upload Logic
     const btnPromptUpload = document.getElementById('btn-prompt-upload');
     const promptInput = document.getElementById('prompt-file');
@@ -3783,6 +3801,9 @@ async function loadSettings() {
         setIfExists('cfg-claude-key', config.api_keys.claude_api_key);
         setIfExists('cfg-qwen-key', config.api_keys.qwen_api_key);
         setIfExists('cfg-gemini-key', config.api_keys.gemini_api_key);
+        setIfExists('cfg-kimi-key', config.api_keys.kimi_api_key);
+        setIfExists('cfg-minimax-key', config.api_keys.minimax_api_key);
+        setIfExists('cfg-glm-key', config.api_keys.glm_api_key);
 
         // LLM Provider Selection
         const llmProvider = config.llm?.provider || 'none';
@@ -3821,6 +3842,9 @@ async function saveSettings() {
     const elClaudeKey = document.getElementById('cfg-claude-key');
     const elQwenKey = document.getElementById('cfg-qwen-key');
     const elGeminiKey = document.getElementById('cfg-gemini-key');
+    const elKimiKey = document.getElementById('cfg-kimi-key');
+    const elMinimaxKey = document.getElementById('cfg-minimax-key');
+    const elGlmKey = document.getElementById('cfg-glm-key');
     const elLlmProvider = document.getElementById('cfg-llm-provider');
 
     if (!elBinanceKey || !elDeepseekKey) {
@@ -3835,7 +3859,10 @@ async function saveSettings() {
             openai_api_key: elOpenaiKey ? elOpenaiKey.value : '',
             claude_api_key: elClaudeKey ? elClaudeKey.value : '',
             qwen_api_key: elQwenKey ? elQwenKey.value : '',
-            gemini_api_key: elGeminiKey ? elGeminiKey.value : ''
+            gemini_api_key: elGeminiKey ? elGeminiKey.value : '',
+            kimi_api_key: elKimiKey ? elKimiKey.value : '',
+            minimax_api_key: elMinimaxKey ? elMinimaxKey.value : '',
+            glm_api_key: elGlmKey ? elGlmKey.value : ''
         },
         llm: {
             llm_provider: elLlmProvider ? elLlmProvider.value : 'deepseek'
@@ -4414,7 +4441,10 @@ function renderTradeHistory(trades) {
         openai: 'openai_api_key',
         claude: 'claude_api_key',
         qwen: 'qwen_api_key',
-        gemini: 'gemini_api_key'
+        gemini: 'gemini_api_key',
+        kimi: 'kimi_api_key',
+        minimax: 'minimax_api_key',
+        glm: 'glm_api_key'
     };
 
     const resolveProvider = (config) => {

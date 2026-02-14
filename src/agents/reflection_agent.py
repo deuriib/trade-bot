@@ -87,7 +87,7 @@ class ReflectionAgentLLM:
         llm_cfg = LLMConfig(
             api_key=api_key,
             base_url=llm_config.get('base_url'),
-            model=llm_config.get('model') or config.deepseek.get('model', 'deepseek-chat'),
+            model=llm_config.get('model') or (config.deepseek.get('model', 'deepseek-chat') if provider == 'deepseek' else None),
             timeout=llm_config.get('timeout', 120),
             max_retries=2,
             temperature=0.7,  # Slightly creative for insights

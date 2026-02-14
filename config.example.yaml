@@ -16,7 +16,7 @@ deepseek:
   max_tokens: 2000
 
 # LLM 配置 (多提供商支持)
-# 支持: openai, deepseek, claude, qwen, gemini
+# 支持: openai, deepseek, claude, qwen, gemini, kimi, minimax, glm
 llm:
   provider: deepseek              # 当前使用的提供商
   model: deepseek-chat            # 模型名称 (留空则使用提供商默认值)

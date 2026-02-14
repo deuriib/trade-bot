@@ -10,6 +10,9 @@ LLM 模块
 - Claude (Anthropic)
 - Qwen (通义千问)
 - Gemini (Google)
+- Kimi (Moonshot)
+- MiniMax
+- GLM (智谱)
 
 使用示例：
 
@@ -36,6 +39,9 @@ from .deepseek_client import DeepSeekClient
 from .claude_client import ClaudeClient
 from .qwen_client import QwenClient
 from .gemini_client import GeminiClient
+from .kimi_client import KimiClient
+from .minimax_client import MiniMaxClient
+from .glm_client import GLMClient
 
 __all__ = [
     # 核心接口
@@ -52,4 +58,7 @@ __all__ = [
     "ClaudeClient",
     "QwenClient",
     "GeminiClient",
+    "KimiClient",
+    "MiniMaxClient",
+    "GLMClient",
 ]

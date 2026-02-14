@@ -65,7 +65,7 @@ class TriggerAgentLLM:
         self.client = create_client(provider, LLMConfig(
             api_key=api_key,
             base_url=llm_config.get('base_url'),
-            model=llm_config.get('model', 'deepseek-chat'),
+            model=llm_config.get('model') or (config.deepseek.get('model', 'deepseek-chat') if provider == 'deepseek' else None),
             temperature=0.3,
             max_tokens=300
         ))

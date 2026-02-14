@@ -37,7 +37,10 @@ class ConfigManager:
                 "openai_api_key": self._mask_key(env_vars.get('OPENAI_API_KEY', '')),
                 "claude_api_key": self._mask_key(env_vars.get('CLAUDE_API_KEY', '')),
                 "qwen_api_key": self._mask_key(env_vars.get('QWEN_API_KEY', '')),
-                "gemini_api_key": self._mask_key(env_vars.get('GEMINI_API_KEY', ''))
+                "gemini_api_key": self._mask_key(env_vars.get('GEMINI_API_KEY', '')),
+                "kimi_api_key": self._mask_key(env_vars.get('KIMI_API_KEY', '')),
+                "minimax_api_key": self._mask_key(env_vars.get('MINIMAX_API_KEY', '')),
+                "glm_api_key": self._mask_key(env_vars.get('GLM_API_KEY', ''))
             },
             "trading": {
                 "symbol": env_vars.get('TRADING_SYMBOLS', env_vars.get('TRADING_SYMBOL', 'AI500_TOP5')),
@@ -47,7 +50,7 @@ class ConfigManager:
             },
             "llm": {
                 "provider": env_vars.get('LLM_PROVIDER', 'none'),
-                "model": env_vars.get('DEEPSEEK_MODEL', 'deepseek-chat')
+                "model": env_vars.get('LLM_MODEL', env_vars.get('DEEPSEEK_MODEL', ''))
             },
             "agents": self._get_agents_config()
         }
@@ -64,6 +67,9 @@ class ConfigManager:
                 "claude_api_key": "CLAUDE_API_KEY",
                 "qwen_api_key": "QWEN_API_KEY",
                 "gemini_api_key": "GEMINI_API_KEY",
+                "kimi_api_key": "KIMI_API_KEY",
+                "minimax_api_key": "MINIMAX_API_KEY",
+                "glm_api_key": "GLM_API_KEY",
                 "symbol": "TRADING_SYMBOLS",  # Support multiple symbols
                 "leverage": "LEVERAGE",
                 "run_mode": "RUN_MODE",

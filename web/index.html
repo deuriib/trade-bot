@@ -321,6 +321,9 @@
                             <option value="claude">Claude (Anthropic)</option>
                             <option value="qwen">Qwen (通义千问)</option>
                             <option value="gemini">Gemini (Google)</option>
+                            <option value="kimi">Kimi (Moonshot)</option>
+                            <option value="minimax">MiniMax</option>
+                            <option value="glm">GLM (Zhipu)</option>
                         </select>
                         <p style="color: #a0aec0; font-size: 0.75em; margin-top: 4px;">Requires restart to apply.</p>
                     </div>
@@ -368,6 +371,33 @@
                         <p style="color: #718096; font-size: 0.7em; margin-top: 2px;">Get key: <a
                                 href="https://aistudio.google.com" target="_blank"
                                 style="color: #00ff9d">aistudio.google.com</a></p>
+                    </div>
+
+                    <!-- Kimi API Key -->
+                    <div class="form-group llm-key-field" data-provider="kimi" style="display:none;">
+                        <label>Kimi API Key</label>
+                        <input type="password" id="cfg-kimi-key" class="form-control" placeholder="Saved (Hidden)">
+                        <p style="color: #718096; font-size: 0.7em; margin-top: 2px;">Get key: <a
+                                href="https://platform.moonshot.ai" target="_blank"
+                                style="color: #00ff9d">platform.moonshot.ai</a></p>
+                    </div>
+
+                    <!-- MiniMax API Key -->
+                    <div class="form-group llm-key-field" data-provider="minimax" style="display:none;">
+                        <label>MiniMax API Key</label>
+                        <input type="password" id="cfg-minimax-key" class="form-control" placeholder="Saved (Hidden)">
+                        <p style="color: #718096; font-size: 0.7em; margin-top: 2px;">Get key: <a
+                                href="https://platform.minimax.io" target="_blank"
+                                style="color: #00ff9d">platform.minimax.io</a></p>
+                    </div>
+
+                    <!-- GLM API Key -->
+                    <div class="form-group llm-key-field" data-provider="glm" style="display:none;">
+                        <label>GLM API Key</label>
+                        <input type="password" id="cfg-glm-key" class="form-control" placeholder="Saved (Hidden)">
+                        <p style="color: #718096; font-size: 0.7em; margin-top: 2px;">Get key: <a
+                                href="https://open.bigmodel.cn" target="_blank"
+                                style="color: #00ff9d">open.bigmodel.cn</a></p>
                     </div>
                 </div>
 

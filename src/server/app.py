@@ -342,14 +342,19 @@ async def control_bot(cmd: ControlCommand, authenticated: bool = Depends(verify_
     DEFAULT_API_KEY_PREFIX = "sk-"  # Most default keys start with this or are empty
     deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
-    claude_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    claude_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY", "")
+    qwen_key = os.environ.get("QWEN_API_KEY", "")
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    kimi_key = os.environ.get("KIMI_API_KEY", "")
+    minimax_key = os.environ.get("MINIMAX_API_KEY", "")
+    glm_key = os.environ.get("GLM_API_KEY", "")
     
     # Consider using default API if all keys are empty or match known demo patterns
     is_using_default_api = (
         not deepseek_key or 
         deepseek_key.startswith("demo_") or 
         deepseek_key == "your_deepseek_api_key_here"
-    ) and not openai_key and not claude_key
+    ) and not openai_key and not claude_key and not qwen_key and not gemini_key and not kimi_key and not minimax_key and not glm_key
     
     if action == "start":
         was_stopped = global_state.execution_mode == "Stopped"

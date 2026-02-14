@@ -2,7 +2,7 @@
 LLM 策略推理引擎 (Multi-Provider Support)
 =========================================
 
-支持多种 LLM 提供商: OpenAI, DeepSeek, Claude, Qwen, Gemini
+支持多种 LLM 提供商: OpenAI, DeepSeek, Claude, Qwen, Gemini, Kimi, MiniMax, GLM
 """
 import json
 import re
@@ -75,7 +75,9 @@ class StrategyEngine:
         
         # LLM 参数
         self.provider = provider
-        self.model = llm_config.get('model') or config.deepseek.get('model', 'deepseek-chat')
+        self.model = llm_config.get('model')
+        if not self.model and provider == 'deepseek':
+            self.model = config.deepseek.get('model', 'deepseek-chat')
         self.temperature = llm_config.get('temperature', config.deepseek.get('temperature', 0.3))
         self.max_tokens = llm_config.get('max_tokens', config.deepseek.get('max_tokens', 2000))
         
@@ -124,7 +126,9 @@ class StrategyEngine:
         llm_config = config.llm
         provider = llm_config.get('provider') or os.getenv('LLM_PROVIDER', 'none')
         api_keys = llm_config.get('api_keys', {})
-        api_key = api_keys.get(provider) or config.deepseek.get('api_key')
+        api_key = api_keys.get(provider)
+        if not api_key and provider == 'deepseek':
+            api_key = config.deepseek.get('api_key')
 
         disable_env = os.getenv('LLM_DISABLED', '').lower() in ('1', 'true', 'yes', 'on')
         if provider.lower() in ('none', 'disabled', 'off') or disable_env:
@@ -136,6 +140,9 @@ class StrategyEngine:
         
         if api_key:
             self.provider = provider
+            self.model = llm_config.get('model')
+            if not self.model and provider == 'deepseek':
+                self.model = config.deepseek.get('model', 'deepseek-chat')
             self._init_client(api_key, llm_config)
             return True
         return False
