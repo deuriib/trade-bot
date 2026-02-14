@@ -6,7 +6,12 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.utils.action_protocol import normalize_action, is_open_action, is_close_action
+from src.utils.action_protocol import (
+    normalize_action,
+    is_open_action,
+    is_close_action,
+    is_passive_action,
+)
 
 
 def test_normalize_open_aliases():
@@ -36,3 +41,5 @@ def test_action_classifiers():
     assert not is_open_action("wait")
     assert is_close_action("close_long")
     assert is_close_action("close_position")
+    assert is_passive_action("wait")
+    assert is_passive_action("hold")

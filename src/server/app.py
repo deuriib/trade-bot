@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 
 from src.server.state import global_state
+from src.utils.action_protocol import is_passive_action
 
 # Input Model
 from pydantic import BaseModel
@@ -1180,8 +1181,8 @@ async def run_backtest(config: BacktestRequest, authenticated: bool = Depends(ve
 
                     # --- Extract Decisions ---
                     decisions = []
-                    # Filter: Last 50 + any non-hold action
-                    filtered_decisions = [d for d in result.decisions if d.get('action') != 'hold']
+                    # Filter: Last 50 + any non-passive action
+                    filtered_decisions = [d for d in result.decisions if not is_passive_action(d.get('action'))]
                     filtered_decisions += result.decisions[-50:] # Add last 50
                     
                     # Deduplicate by timestamp if needed, but simple list is fine for now

@@ -75,6 +75,7 @@ from src.utils.action_protocol import (
     normalize_action,
     is_open_action,
     is_close_action,
+    is_passive_action,
 )
 from src.agents.regime_detector_agent import RegimeDetector  # ✅ Market Regime Detection
 from src.config import Config # Re-added Config as it's used later
@@ -3611,7 +3612,7 @@ class MultiAgentTradingBot:
             action = normalize_action(order_params.get('action'), position_side=pos_side)
             order_params['action'] = action
 
-            if action in ('wait', 'hold'):
+            if is_passive_action(action):
                 return True
 
             # 设置杠杆
@@ -4305,7 +4306,7 @@ class MultiAgentTradingBot:
                         )
                         exec_action = exec_result.get('action', 'unknown')
                         exec_status = exec_result.get('status', 'unknown')
-                        if exec_action and str(exec_action).lower() not in ('hold', 'wait', 'unknown'):
+                        if exec_action and str(exec_action).lower() != 'unknown' and not is_passive_action(exec_action):
                             cycle_traded = exec_status == 'success'
                             cycle_trade_symbol = self.current_symbol
                             cycle_trade_action = exec_action
