@@ -118,6 +118,8 @@ docker-compose down
 python3 scripts/run_tests.py
 ```
 
+详细说明见：`docs/TESTING_CN.md`
+
 如需只跑某个文件，可附加 pytest 参数：
 
 ```bash
