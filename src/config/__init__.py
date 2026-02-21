@@ -42,6 +42,11 @@ class Config:
     
     def _override_from_env(self):
         """从环境变量覆盖配置"""
+        # Initialize sections if missing
+        for section in ['binance', 'deepseek', 'redis']:
+            if section not in self._config or self._config[section] is None:
+                self._config[section] = {}
+
         # Binance
         if os.getenv('BINANCE_API_KEY'):
             self._config['binance']['api_key'] = os.getenv('BINANCE_API_KEY')

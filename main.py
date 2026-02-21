@@ -4789,7 +4789,10 @@ class MultiAgentTradingBot:
         self.test_mode = False
         global_state.is_test_mode = False
         try:
-            self.config._load_config()  # Ensure we load latest config for API keys
+            # Reload .env file to pick up latest API keys from settings
+            from dotenv import load_dotenv
+            load_dotenv(self._env_path, override=True)
+            self.config._load_config()
             self.config._override_from_env()
         except Exception:
             pass

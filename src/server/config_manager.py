@@ -164,6 +164,8 @@ class ConfigManager:
             for key, val in flat_updates.items():
                 if key not in updated_keys:
                     new_lines.append(f"{key}={val}\n")
+                # Ensure os.environ reflects the new values for the current process
+                os.environ[key] = str(val)
                     
             with open(self.env_path, 'w', encoding='utf-8') as f:
                 f.writelines(new_lines)
