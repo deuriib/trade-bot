@@ -4789,6 +4789,7 @@ class MultiAgentTradingBot:
         self.test_mode = False
         global_state.is_test_mode = False
         try:
+            self.config._load_config()  # Ensure we load latest config for API keys
             self.config._override_from_env()
         except Exception:
             pass
@@ -4801,7 +4802,10 @@ class MultiAgentTradingBot:
         except Exception as e:
             self.test_mode = True
             global_state.is_test_mode = True
-            raise RuntimeError(f"Failed to fetch live account balance: {e}")
+            error_msg = str(e)
+            if "-2015" in error_msg or "Invalid API-key" in error_msg:
+                raise RuntimeError("API密钥无效或权限异常，请在设置中检查 Binance API Key 并确认已开启【合约交易】及【IP白名单】限制导致拒绝。")
+            raise RuntimeError(f"无法获取实盘账户信息: {e}")
 
         wallet = float(acc_info.get('total_wallet_balance', 0) or 0.0)
         unrealized = float(acc_info.get('total_unrealized_profit', 0) or 0.0)
