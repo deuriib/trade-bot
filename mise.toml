@@ -1,0 +1,120 @@
+[tools]
+# Python version for trading bot (matches Dockerfile and install.sh requirements)
+python = "3.11"
+
+# Node.js for web dashboard development  
+node = "22"
+
+# Redis for data caching
+redis = "7.4.2"
+
+[env]
+# Python environment variables
+PYTHONDONTWRITEBYTECODE = "1"
+PYTHONUNBUFFERED = "1"
+PYTHONPATH = "src"
+
+# Trading bot specific
+BINANCE_TESTNET = "true"
+
+[tasks.install]
+description = "Install Python dependencies and setup venv"
+run = """
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+"""
+
+[tasks.test]
+description = "Run all tests with pytest"
+run = "pytest -v"
+
+[tasks.test-single]
+description = "Run a single test file (usage: mise run test-single -- tests/test_agent_config.py)"
+run = "pytest -v $@"
+
+[tasks.test-func]
+description = "Run a specific test function (usage: mise run test-func -- tests/test_agent_config.py::TestAgentConfigDefaults::test_default_enabled_agents)"
+run = "pytest -v $@"
+
+[tasks.test-pattern]
+description = "Run tests matching pattern (usage: mise run test-pattern -- -k test_rsi)"
+run = "pytest $@"
+
+[tasks.lint]
+description = "Lint code with ruff"
+run = "ruff check src/ tests/ --fix"
+
+[tasks.format]
+description = "Format code with black"
+run = "black src/ tests/"
+
+[tasks.typecheck]
+description = "Type check with mypy"
+run = "mypy src/"
+
+[tasks.quality]
+description = "Run all code quality checks"
+depends = ["lint", "format", "typecheck"]
+
+[tasks.dev]
+description = "Start trading bot in test mode"
+run = "./start.sh --test"
+
+[tasks.dev-continuous]
+description = "Start trading bot in test continuous mode"
+run = "./start.sh --test --mode continuous"
+
+[tasks.prod]
+description = "Start trading bot in production mode"
+run = "./start.sh --mode continuous"
+
+[tasks.dashboard]
+description = "Start web dashboard only"
+run = "python -m uvicorn src.server.app:app --reload --host 0.0.0.0 --port 8000"
+
+[tasks.backtest]
+description = "Run backtest analysis"
+run = "python backtest.py"
+
+[tasks.docker-build]
+description = "Build Docker image"
+run = "docker build -t trade-bot ."
+
+[tasks.docker-run]
+description = "Run Docker container"
+run = "docker run -p 8000:8000 --env-file .env trade-bot"
+
+[tasks.docker-compose-up]
+description = "Start with Docker Compose"
+run = "cd docker && docker-compose up -d"
+
+[tasks.docker-compose-down]
+description = "Stop Docker Compose"
+run = "cd docker && docker-compose down"
+
+[tasks.clean]
+description = "Clean up generated files"
+run = """
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find . -type f -name "*.pyc" -delete 2>/dev/null || true
+find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+"""
+
+[tasks.setup]
+description = "Complete project setup (install dependencies, setup env)"
+depends = ["install"]
+run = """
+echo "Setting up LLM-TradeBot development environment..."
+if [ ! -f .env ]; then
+    echo "Creating .env from .env.example..."
+    cp .env.example .env
+    echo "⚠️  Please edit .env file with your API keys"
+fi
+echo "✅ Setup complete! Run 'mise run dev' to start development."
+"""
+
+[settings]
+# Auto-activate this mise config when entering directory
+activate_aggressive = true
+legacy_version_file = true  # Support .python-version, .node-version files
