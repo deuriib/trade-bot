@@ -22,6 +22,7 @@ import re
 import json
 from typing import Dict, Optional, Tuple
 from src.utils.logger import log
+from src.utils.action_protocol import normalize_action
 
 
 class LLMOutputParser:
@@ -329,53 +330,23 @@ class LLMOutputParser:
             'reasoning': 'Parse error, fallback to safe wait decision'
         }
     
-    def normalize_action(self, action: str) -> str:
+    def normalize_action(self, action: str, position_side: Optional[str] = None) -> str:
         """
         标准化 action 字段
         
         支持多种变体：
         - long/buy -> open_long
         - short/sell -> open_short
-        - close/exit -> close_position
+        - close/exit -> close_long/close_short (if side known) else close_position
         
         Args:
             action: 原始 action
+            position_side: 当前持仓方向（可选，用于解析 close_position）
             
         Returns:
             标准化后的 action
         """
-        action_map = {
-            # 开多仓
-            'long': 'open_long',
-            'buy': 'open_long',
-            'go_long': 'open_long',
-            
-            # 开空仓
-            'short': 'open_short',
-            'sell': 'open_short',
-            'go_short': 'open_short',
-            
-            # 平多仓
-            'close_long': 'close_long',
-            'exit_long': 'close_long',
-            
-            # 平空仓
-            'close_short': 'close_short',
-            'exit_short': 'close_short',
-            
-            # 平仓（通用）
-            'close': 'close_position',
-            'exit': 'close_position',
-            'close_position': 'close_position',
-            
-            # 观望/持有
-            'wait': 'wait',  # 无持仓时观望
-            'hold': 'hold',  # 有持仓时持有
-            'skip': 'wait',  # skip 映射到 wait
-        }
-        
-        normalized = action_map.get(action.lower(), action)
-        return normalized
+        return normalize_action(action, position_side=position_side)
     
     def validate_format(self, json_str: str) -> Tuple[bool, str]:
         """

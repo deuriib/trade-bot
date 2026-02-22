@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from loguru import logger
 from src.config import config
+from src.utils.action_protocol import normalize_action, is_close_action
 
 
 class ColoredLogger:
@@ -49,16 +50,17 @@ class ColoredLogger:
     
     def llm_decision(self, action: str, confidence: int, reasoning: str = None):
         """记录 LLM 决策（浅色调高亮）"""
-        # 根据动作类型选择颜色（使用浅色调）
-        action_colors = {
-            'open_long': 'light-green',
-            'add_position': 'light-green',
-            'open_short': 'light-red',
-            'close_position': 'light-yellow',
-            'reduce_position': 'light-yellow',
-            'hold': 'light-blue'
-        }
-        color = action_colors.get(action, 'white')
+        norm_action = normalize_action(action)
+        if norm_action == 'open_long':
+            color = 'light-green'
+        elif norm_action == 'open_short':
+            color = 'light-red'
+        elif is_close_action(norm_action):
+            color = 'light-yellow'
+        elif norm_action in ('hold', 'wait'):
+            color = 'light-blue'
+        else:
+            color = 'white'
         
         self._logger.opt(colors=True).info(
             f"<bold><{color}>{'=' * 60}</{color}></bold>\n"

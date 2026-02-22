@@ -2,7 +2,7 @@
 LLM 策略推理引擎 (Multi-Provider Support)
 =========================================
 
-支持多种 LLM 提供商: OpenAI, DeepSeek, Claude, Qwen, Gemini
+支持多种 LLM 提供商: OpenAI, DeepSeek, Claude, Qwen, Gemini, Kimi, MiniMax, GLM
 """
 import json
 import re
@@ -11,6 +11,7 @@ import os
 import httpx
 from src.config import config
 from src.utils.logger import log
+from src.utils.action_protocol import VALID_ACTIONS
 from src.strategy.llm_parser import LLMOutputParser
 from src.strategy.decision_validator import DecisionValidator
 from src.llm import create_client, LLMConfig
@@ -74,7 +75,9 @@ class StrategyEngine:
         
         # LLM 参数
         self.provider = provider
-        self.model = llm_config.get('model') or config.deepseek.get('model', 'deepseek-chat')
+        self.model = llm_config.get('model')
+        if not self.model and provider == 'deepseek':
+            self.model = config.deepseek.get('model', 'deepseek-chat')
         self.temperature = llm_config.get('temperature', config.deepseek.get('temperature', 0.3))
         self.max_tokens = llm_config.get('max_tokens', config.deepseek.get('max_tokens', 2000))
         
@@ -123,7 +126,9 @@ class StrategyEngine:
         llm_config = config.llm
         provider = llm_config.get('provider') or os.getenv('LLM_PROVIDER', 'none')
         api_keys = llm_config.get('api_keys', {})
-        api_key = api_keys.get(provider) or config.deepseek.get('api_key')
+        api_key = api_keys.get(provider)
+        if not api_key and provider == 'deepseek':
+            api_key = config.deepseek.get('api_key')
 
         disable_env = os.getenv('LLM_DISABLED', '').lower() in ('1', 'true', 'yes', 'on')
         if provider.lower() in ('none', 'disabled', 'off') or disable_env:
@@ -135,6 +140,9 @@ class StrategyEngine:
         
         if api_key:
             self.provider = provider
+            self.model = llm_config.get('model')
+            if not self.model and provider == 'deepseek':
+                self.model = config.deepseek.get('model', 'deepseek-chat')
             self._init_client(api_key, llm_config)
             return True
         return False
@@ -209,7 +217,10 @@ class StrategyEngine:
             
             # 标准化 action 字段
             if 'action' in decision:
-                decision['action'] = self.parser.normalize_action(decision['action'])
+                decision['action'] = self.parser.normalize_action(
+                    decision['action'],
+                    position_side=market_context_data.get('position_side')
+                )
             
             # 验证决策
             is_valid, errors = self.validator.validate(decision)
@@ -225,7 +236,7 @@ class StrategyEngine:
             
             # 记录决策
             log.llm_decision(
-                action=decision.get('action', 'hold'),
+                action=decision.get('action', 'wait'),
                 confidence=decision.get('confidence', 0),
                 reasoning=decision.get('reasoning', reasoning)
             )
@@ -485,11 +496,7 @@ Analyze the above data following the strategy rules in system prompt. Output you
                 return False
         
         # 检查action合法性
-        valid_actions = [
-            'open_long', 'open_short', 'close_position',
-            'add_position', 'reduce_position', 'hold'
-        ]
-        if decision['action'] not in valid_actions:
+        if decision['action'] not in VALID_ACTIONS:
             log.error(f"无效的action: {decision['action']}")
             return False
         

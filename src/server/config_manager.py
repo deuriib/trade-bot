@@ -37,7 +37,10 @@ class ConfigManager:
                 "openai_api_key": self._mask_key(env_vars.get('OPENAI_API_KEY', '')),
                 "claude_api_key": self._mask_key(env_vars.get('CLAUDE_API_KEY', '')),
                 "qwen_api_key": self._mask_key(env_vars.get('QWEN_API_KEY', '')),
-                "gemini_api_key": self._mask_key(env_vars.get('GEMINI_API_KEY', ''))
+                "gemini_api_key": self._mask_key(env_vars.get('GEMINI_API_KEY', '')),
+                "kimi_api_key": self._mask_key(env_vars.get('KIMI_API_KEY', '')),
+                "minimax_api_key": self._mask_key(env_vars.get('MINIMAX_API_KEY', '')),
+                "glm_api_key": self._mask_key(env_vars.get('GLM_API_KEY', ''))
             },
             "trading": {
                 "symbol": env_vars.get('TRADING_SYMBOLS', env_vars.get('TRADING_SYMBOL', 'AI500_TOP5')),
@@ -47,7 +50,7 @@ class ConfigManager:
             },
             "llm": {
                 "provider": env_vars.get('LLM_PROVIDER', 'none'),
-                "model": env_vars.get('DEEPSEEK_MODEL', 'deepseek-chat')
+                "model": env_vars.get('LLM_MODEL', env_vars.get('DEEPSEEK_MODEL', ''))
             },
             "agents": self._get_agents_config()
         }
@@ -64,6 +67,9 @@ class ConfigManager:
                 "claude_api_key": "CLAUDE_API_KEY",
                 "qwen_api_key": "QWEN_API_KEY",
                 "gemini_api_key": "GEMINI_API_KEY",
+                "kimi_api_key": "KIMI_API_KEY",
+                "minimax_api_key": "MINIMAX_API_KEY",
+                "glm_api_key": "GLM_API_KEY",
                 "symbol": "TRADING_SYMBOLS",  # Support multiple symbols
                 "leverage": "LEVERAGE",
                 "run_mode": "RUN_MODE",
@@ -158,6 +164,8 @@ class ConfigManager:
             for key, val in flat_updates.items():
                 if key not in updated_keys:
                     new_lines.append(f"{key}={val}\n")
+                # Ensure os.environ reflects the new values for the current process
+                os.environ[key] = str(val)
                     
             with open(self.env_path, 'w', encoding='utf-8') as f:
                 f.writelines(new_lines)
@@ -199,8 +207,14 @@ class ConfigManager:
                 with open(config_yaml_path, 'r', encoding='utf-8') as f:
                     config_data = yaml.safe_load(f) or {}
             
-            # Update agents section
-            config_data['agents'] = agents
+            # Update agents section while preserving non-toggle policy keys (e.g. timeouts).
+            existing_agents = config_data.get('agents', {})
+            if not isinstance(existing_agents, dict):
+                existing_agents = {}
+            merged_agents = dict(existing_agents)
+            for key, value in agents.items():
+                merged_agents[key] = value
+            config_data['agents'] = merged_agents
             
             # Write back to config.yaml
             with open(config_yaml_path, 'w', encoding='utf-8') as f:
@@ -208,6 +222,8 @@ class ConfigManager:
             
             # Also set environment variables for immediate effect
             for agent_name, enabled in agents.items():
+                if not isinstance(enabled, bool):
+                    continue
                 env_key = f"AGENT_{agent_name.upper()}"
                 os.environ[env_key] = 'true' if enabled else 'false'
             
@@ -222,24 +238,10 @@ class ConfigManager:
     def _get_agents_config(self) -> Dict[str, bool]:
         """Read agents configuration from config.yaml, return defaults if not found"""
         import yaml
+        from src.agents.agent_config import AgentConfig
         
-        # Default values (UI defaults for optional agents)
-        defaults = {
-            "predict_agent": True,
-            "ai_prediction_filter_agent": True,
-            "regime_detector_agent": True,
-            "position_analyzer_agent": True,
-            "trigger_detector_agent": True,
-            "trend_agent_llm": False,
-            "setup_agent_llm": False,
-            "trigger_agent_llm": False,
-            "trend_agent_local": True,
-            "setup_agent_local": True,
-            "trigger_agent_local": True,
-            "reflection_agent_llm": False,
-            "reflection_agent_local": True,
-            "symbol_selector_agent": True
-        }
+        # Default values come from AgentConfig to avoid drift.
+        defaults = AgentConfig().get_enabled_agents()
         
         try:
             config_yaml_path = os.path.join(self.root_dir, 'config.yaml')
@@ -255,8 +257,13 @@ class ConfigManager:
                     agents['trigger_agent_llm'] = agents['trigger_agent']
                 if 'reflection_agent' in agents and 'reflection_agent_llm' not in agents:
                     agents['reflection_agent_llm'] = agents['reflection_agent']
-                # Merge with defaults (config values override defaults)
-                return {**defaults, **agents}
+                # Merge with defaults (config values override defaults) while
+                # returning toggle fields only for UI compatibility.
+                normalized = {}
+                for key in defaults.keys():
+                    if key in agents:
+                        normalized[key] = bool(agents.get(key))
+                return {**defaults, **normalized}
         except Exception as e:
             print(f"[ConfigManager] Error reading agents config: {e}")
         

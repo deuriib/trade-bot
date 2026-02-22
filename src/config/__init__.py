@@ -42,11 +42,18 @@ class Config:
     
     def _override_from_env(self):
         """从环境变量覆盖配置"""
+        # Initialize sections if missing
+        for section in ['binance', 'deepseek', 'redis']:
+            if section not in self._config or self._config[section] is None:
+                self._config[section] = {}
+
         # Binance
         if os.getenv('BINANCE_API_KEY'):
             self._config['binance']['api_key'] = os.getenv('BINANCE_API_KEY')
-        if os.getenv('BINANCE_API_SECRET'):
-            self._config['binance']['api_secret'] = os.getenv('BINANCE_API_SECRET')
+        # Support both BINANCE_API_SECRET (legacy) and BINANCE_SECRET_KEY (current docs/UI)
+        binance_secret = os.getenv('BINANCE_API_SECRET') or os.getenv('BINANCE_SECRET_KEY')
+        if binance_secret:
+            self._config['binance']['api_secret'] = binance_secret
         
         # DeepSeek (向后兼容)
         if os.getenv('DEEPSEEK_API_KEY'):
@@ -72,8 +79,20 @@ class Config:
             'claude': claude_api_key,
             'qwen': os.getenv('QWEN_API_KEY'),
             'gemini': os.getenv('GEMINI_API_KEY'),
+            'kimi': os.getenv('KIMI_API_KEY'),
+            'minimax': os.getenv('MINIMAX_API_KEY'),
+            'glm': os.getenv('GLM_API_KEY'),
         }
         self._config['llm']['api_keys'] = {k: v for k, v in llm_api_keys.items() if v}
+
+        # Provider/model override via environment
+        llm_provider = os.getenv('LLM_PROVIDER')
+        if llm_provider:
+            self._config['llm']['provider'] = llm_provider.lower()
+
+        llm_model = os.getenv('LLM_MODEL') or os.getenv('DEEPSEEK_MODEL')
+        if llm_model:
+            self._config['llm']['model'] = llm_model
         
         # Custom base URL (for proxies)
         # 支持 ANTHROPIC_BASE_URL 作为 LLM_BASE_URL 的别名（优先级更高）

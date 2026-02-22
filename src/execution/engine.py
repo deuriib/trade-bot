@@ -5,6 +5,12 @@ from typing import Dict, Optional, List
 from src.api.binance_client import BinanceClient
 from src.risk.manager import RiskManager
 from src.utils.logger import log
+from src.utils.action_protocol import (
+    normalize_action,
+    is_open_action,
+    is_close_action,
+    is_passive_action,
+)
 from datetime import datetime
 import time
 
@@ -40,7 +46,20 @@ class ExecutionEngine:
             执行结果
         """
         
-        action = decision['action']
+        raw_action = str(decision.get('action', 'wait'))
+        position_side = None
+        if position_info and position_info.get('position_amt') is not None:
+            try:
+                amt = float(position_info.get('position_amt', 0))
+                if amt > 0:
+                    position_side = 'long'
+                elif amt < 0:
+                    position_side = 'short'
+            except Exception:
+                position_side = None
+
+        action = normalize_action(raw_action, position_side=position_side)
+        decision['action'] = action
         symbol = decision['symbol']
         
         result = {
@@ -52,26 +71,26 @@ class ExecutionEngine:
         }
         
         try:
-            if action == 'hold':
+            # Keep backward compatibility for legacy partial position commands.
+            if raw_action in ('add_position', 'reduce_position'):
+                if raw_action == 'add_position':
+                    return self._add_position(decision, account_info, position_info, current_price)
+                return self._reduce_position(decision, position_info)
+
+            if is_passive_action(action):
                 result['success'] = True
                 result['message'] = '观望，不执行操作'
-                log.info("执行hold，无操作")
+                log.info(f"执行{action}，无操作")
                 return result
             
-            elif action == 'open_long':
+            elif is_open_action(action) and action == 'open_long':
                 return self._open_long(decision, account_info, current_price)
             
-            elif action == 'open_short':
+            elif is_open_action(action) and action == 'open_short':
                 return self._open_short(decision, account_info, current_price)
             
-            elif action == 'close_position':
-                return self._close_position(decision, position_info)
-            
-            elif action == 'add_position':
-                return self._add_position(decision, account_info, position_info, current_price)
-            
-            elif action == 'reduce_position':
-                return self._reduce_position(decision, position_info)
+            elif is_close_action(action):
+                return self._close_position(decision, position_info, close_action=action)
             
             else:
                 result['message'] = f'未知操作: {action}'
@@ -212,19 +231,53 @@ class ExecutionEngine:
             'take_profit': take_profit_price,
             'message': '开空仓成功'
         }
+
+    def set_stop_loss_take_profit(
+        self,
+        symbol: str,
+        position_side: str,
+        stop_loss: Optional[float] = None,
+        take_profit: Optional[float] = None
+    ) -> List[Dict]:
+        """兼容主流程调用，转发到 BinanceClient。"""
+        return self.client.set_stop_loss_take_profit(
+            symbol=symbol,
+            stop_loss_price=stop_loss,
+            take_profit_price=take_profit,
+            position_side=position_side
+        )
     
-    def _close_position(self, decision: Dict, position_info: Optional[Dict]) -> Dict:
+    def _close_position(
+        self,
+        decision: Dict,
+        position_info: Optional[Dict],
+        close_action: str = "close_position",
+    ) -> Dict:
         """平仓"""
         if not position_info or position_info.get('position_amt', 0) == 0:
             return {
                 'success': False,
-                'action': 'close_position',
+                'action': close_action,
                 'timestamp': datetime.now().isoformat(),
                 'message': '无持仓，无需平仓'
             }
         
         symbol = decision['symbol']
         position_amt = position_info['position_amt']
+        if close_action == "close_long" and position_amt < 0:
+            return {
+                'success': False,
+                'action': close_action,
+                'timestamp': datetime.now().isoformat(),
+                'message': '持仓方向不匹配: 当前为空仓'
+            }
+        if close_action == "close_short" and position_amt > 0:
+            return {
+                'success': False,
+                'action': close_action,
+                'timestamp': datetime.now().isoformat(),
+                'message': '持仓方向不匹配: 当前为多仓'
+            }
         
         # 取消所有挂单
         self.client.cancel_all_orders(symbol)
@@ -246,7 +299,7 @@ class ExecutionEngine:
         
         return {
             'success': True,
-            'action': 'close_position',
+            'action': close_action,
             'timestamp': datetime.now().isoformat(),
             'orders': [order],
             'quantity': quantity,

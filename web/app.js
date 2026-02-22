@@ -18,6 +18,7 @@ window.currentLang = localStorage.getItem('language') || 'en';
 
 // 🎯 Demo Mode Tracking (moved to top to avoid TDZ error)
 let demoExpiredShown = false;
+window.backendIsTestMode = true;
 
 // Apply translations to elements with data-i18n attribute
 function applyTranslations(lang) {
@@ -601,7 +602,9 @@ function updateDashboard() {
             }
 
             const tradeHistory = Array.isArray(data.trade_history) ? data.trade_history : [];
-            const baseline = FIXED_INITIAL_BALANCE;
+            const baseline = Number.isFinite(balanceSnapshot?.initial)
+                ? balanceSnapshot.initial
+                : FIXED_INITIAL_BALANCE;
             const tradeCurve = buildBalanceSeriesFromTrades(tradeHistory, baseline);
 
             if (tradeCurve.length) {
@@ -1053,13 +1056,56 @@ function buildBalanceSeriesFromTrades(trades = [], initialBalance = 0) {
     return series;
 }
 
-function computeRealtimeBalance({ positions = [], trades = [] }) {
-    const initial = FIXED_INITIAL_BALANCE;
-    const realized = sumRealizedFromTrades(trades);
-    const unrealized = sumUnrealizedFromPositions(positions);
-    const totalPnl = realized + unrealized;
-    const realtimeBalance = initial + totalPnl;
-    return { initial, realized, unrealized, totalPnl, realtimeBalance, source: 'trades' };
+function toFiniteNumber(value, fallback = null) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+}
+
+function computeRealtimeBalance({ account, system, virtualAccount, positions = [], trades = [] }) {
+    const isTestMode = Boolean(system?.is_test_mode);
+
+    // Prefer backend account payload so LIVE mode shows true balance instead of a fixed baseline.
+    const equity = toFiniteNumber(account?.total_equity);
+    const wallet = toFiniteNumber(account?.wallet_balance);
+    const totalPnlFromAccount = toFiniteNumber(account?.total_pnl);
+    const unrealizedFromAccount = toFiniteNumber(account?.unrealized_pnl);
+    const realizedFromAccount = toFiniteNumber(account?.realized_pnl);
+
+    const unrealized = unrealizedFromAccount ?? sumUnrealizedFromPositions(positions);
+    const inferredRealized = totalPnlFromAccount !== null
+        ? (totalPnlFromAccount - unrealized)
+        : sumRealizedFromTrades(trades);
+    const realized = realizedFromAccount ?? inferredRealized;
+    const totalPnl = totalPnlFromAccount ?? (realized + unrealized);
+
+    let initial = toFiniteNumber(account?.initial_balance);
+    if (initial === null) {
+        if (equity !== null && totalPnlFromAccount !== null) {
+            initial = equity - totalPnlFromAccount;
+        } else if (isTestMode) {
+            initial = toFiniteNumber(virtualAccount?.initial_balance, FIXED_INITIAL_BALANCE);
+        } else {
+            initial = wallet ?? FIXED_INITIAL_BALANCE;
+        }
+    }
+
+    let realtimeBalance = equity;
+    if (realtimeBalance === null) {
+        if (wallet !== null) {
+            realtimeBalance = wallet + unrealized;
+        } else {
+            realtimeBalance = initial + totalPnl;
+        }
+    }
+
+    return {
+        initial,
+        realized,
+        unrealized,
+        totalPnl,
+        realtimeBalance,
+        source: equity !== null ? 'account' : 'derived'
+    };
 }
 
 function updateRealtimeBalance({ account, system, virtualAccount, chartData, positions = [], trades = [] }) {
@@ -1089,36 +1135,18 @@ function updateRealtimeBalance({ account, system, virtualAccount, chartData, pos
         setTxt('account-realtime-unrealized', '--');
         return null;
     }
-    const { realized, unrealized, realtimeBalance } = snapshot;
-    const displayInitial = FIXED_INITIAL_BALANCE;
-    const pnlAmount = realized;
-    const currentBalanceDisplay = displayInitial + pnlAmount;
+    const { initial, realized, unrealized, totalPnl, realtimeBalance } = snapshot;
+    const currentBalanceDisplay = realtimeBalance;
 
     setTxt('account-realtime-balance', fmt(currentBalanceDisplay));
+    setTxt('account-realtime-initial', fmt(initial));
+    setTxt('account-realtime-realized', fmt(realized));
+    setTxt('account-realtime-unrealized', fmt(unrealized));
     setTxt('acc-pnl', fmt(realized));
     setTxt('total-unrealized-pnl', fmt(unrealized));
     setPnlClass('acc-pnl', realized);
     setPnlClass('total-unrealized-pnl', unrealized);
-    setPnlClass('account-realtime-balance', realized);
-
-
-    // ✅ 始终同步 EQUITY 和 Current Balance，确保两者一致
-    setTxt('acc-equity', fmt(currentBalanceDisplay));
-    setTxt('header-equity', fmt(currentBalanceDisplay));
-
-    const pnlPctElement = document.getElementById('account-total-pnl-pct');
-    if (pnlPctElement && displayInitial > 0) {
-        const pnlPct = (pnlAmount / displayInitial) * 100;
-        pnlPctElement.textContent = `${pnlPct.toFixed(2)}%`;
-        pnlPctElement.classList.remove('pos', 'neg', 'neutral');
-        if (pnlPct > 0) {
-            pnlPctElement.classList.add('pos');
-        } else if (pnlPct < 0) {
-            pnlPctElement.classList.add('neg');
-        } else {
-            pnlPctElement.classList.add('neutral');
-        }
-    }
+    setPnlClass('account-realtime-balance', totalPnl);
 
     return snapshot;
 }
@@ -1438,6 +1466,8 @@ function renderSystemStatus(system) {
     // Update Environment Indicator (Test Mode / Live Trading)
     const envEl = document.getElementById('sys-env');
     if (envEl && system.is_test_mode !== undefined) {
+        window.backendIsTestMode = Boolean(system.is_test_mode);
+        syncTradingModeButtons(window.backendIsTestMode);
         if (system.is_test_mode) {
             envEl.textContent = '🧪 TEST';
             envEl.className = 'value badge warning'; // Yellow for test
@@ -3623,6 +3653,22 @@ function updateLogModeUI() {
     }
 }
 
+function updateLlmProviderKeyFields(provider) {
+    const activeProvider = provider || 'none';
+    const fields = document.querySelectorAll('.llm-key-field');
+    fields.forEach((field) => {
+        const fieldProvider = field.getAttribute('data-provider');
+        field.style.display = fieldProvider === activeProvider ? '' : 'none';
+    });
+}
+
+function initLlmProviderSelector() {
+    const providerSel = document.getElementById('cfg-llm-provider');
+    if (!providerSel) return;
+    providerSel.onchange = () => updateLlmProviderKeyFields(providerSel.value);
+    updateLlmProviderKeyFields(providerSel.value);
+}
+
 /* Settings Modal Logic */
 function initSettings() {
     const modal = document.getElementById('settings-modal');
@@ -3729,6 +3775,8 @@ function initSettings() {
         });
     });
 
+    initLlmProviderSelector();
+
     // Prompt Upload Logic
     const btnPromptUpload = document.getElementById('btn-prompt-upload');
     const promptInput = document.getElementById('prompt-file');
@@ -3783,6 +3831,9 @@ async function loadSettings() {
         setIfExists('cfg-claude-key', config.api_keys.claude_api_key);
         setIfExists('cfg-qwen-key', config.api_keys.qwen_api_key);
         setIfExists('cfg-gemini-key', config.api_keys.gemini_api_key);
+        setIfExists('cfg-kimi-key', config.api_keys.kimi_api_key);
+        setIfExists('cfg-minimax-key', config.api_keys.minimax_api_key);
+        setIfExists('cfg-glm-key', config.api_keys.glm_api_key);
 
         // LLM Provider Selection
         const llmProvider = config.llm?.provider || 'none';
@@ -3821,6 +3872,9 @@ async function saveSettings() {
     const elClaudeKey = document.getElementById('cfg-claude-key');
     const elQwenKey = document.getElementById('cfg-qwen-key');
     const elGeminiKey = document.getElementById('cfg-gemini-key');
+    const elKimiKey = document.getElementById('cfg-kimi-key');
+    const elMinimaxKey = document.getElementById('cfg-minimax-key');
+    const elGlmKey = document.getElementById('cfg-glm-key');
     const elLlmProvider = document.getElementById('cfg-llm-provider');
 
     if (!elBinanceKey || !elDeepseekKey) {
@@ -3835,7 +3889,10 @@ async function saveSettings() {
             openai_api_key: elOpenaiKey ? elOpenaiKey.value : '',
             claude_api_key: elClaudeKey ? elClaudeKey.value : '',
             qwen_api_key: elQwenKey ? elQwenKey.value : '',
-            gemini_api_key: elGeminiKey ? elGeminiKey.value : ''
+            gemini_api_key: elGeminiKey ? elGeminiKey.value : '',
+            kimi_api_key: elKimiKey ? elKimiKey.value : '',
+            minimax_api_key: elMinimaxKey ? elMinimaxKey.value : '',
+            glm_api_key: elGlmKey ? elGlmKey.value : ''
         },
         llm: {
             llm_provider: elLlmProvider ? elLlmProvider.value : 'deepseek'
@@ -4306,6 +4363,16 @@ function renderTradeHistory(trades) {
 // ========================================
 // Test/Live Mode Toggle
 // ========================================
+function syncTradingModeButtons(isTestMode) {
+    const btnTest = document.getElementById('btn-mode-test');
+    const btnLive = document.getElementById('btn-mode-live');
+    if (!btnTest || !btnLive) return;
+
+    window.tradingMode = isTestMode ? 'test' : 'live';
+    btnTest.classList.toggle('active', isTestMode);
+    btnLive.classList.toggle('active', !isTestMode);
+}
+
 (function () {
     const btnTest = document.getElementById('btn-mode-test');
     const btnLive = document.getElementById('btn-mode-live');
@@ -4315,21 +4382,36 @@ function renderTradeHistory(trades) {
     // Current mode state
     window.tradingMode = 'test'; // Default to test
 
+    const requestModeSwitch = async (mode) => {
+        try {
+            const response = await apiFetch('/api/control', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'set_mode', mode })
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok || payload.status !== 'success') {
+                throw new Error(payload.detail || `Mode switch failed (HTTP ${response.status})`);
+            }
+
+            const backendIsTest = payload.is_test_mode !== undefined
+                ? Boolean(payload.is_test_mode)
+                : mode === 'test';
+            window.backendIsTestMode = backendIsTest;
+            syncTradingModeButtons(backendIsTest);
+            console.log(`✅ Switched to ${backendIsTest ? 'TEST' : 'LIVE'} mode`);
+        } catch (err) {
+            console.error('Mode switch failed:', err);
+            syncTradingModeButtons(Boolean(window.backendIsTestMode));
+            alert(err.message || 'Mode switch failed. Please restart in the desired mode.');
+        }
+    };
+
     // Test mode click
     btnTest.addEventListener('click', function () {
         if (window.tradingMode === 'test') return;
 
-        window.tradingMode = 'test';
-        btnTest.classList.add('active');
-        btnLive.classList.remove('active');
-
-        // Send to backend
-        apiFetch('/api/control', {
-            method: 'POST',
-            body: JSON.stringify({ action: 'set_mode', mode: 'test' })
-        }).then(() => {
-            console.log('🧪 Switched to TEST mode');
-        }).catch(err => console.error('Mode switch failed:', err));
+        requestModeSwitch('test');
     });
 
     // Live mode click
@@ -4357,20 +4439,10 @@ function renderTradeHistory(trades) {
             if (tradingTab) tradingTab.click();
         }
 
-        // Update UI
-        window.tradingMode = 'live';
-        btnLive.classList.add('active');
-        btnTest.classList.remove('active');
-
-        // Send to backend
-        apiFetch('/api/control', {
-            method: 'POST',
-            body: JSON.stringify({ action: 'set_mode', mode: 'live' })
-        }).then(() => {
-            console.log('💰 Switched to LIVE mode');
-        }).catch(err => console.error('Mode switch failed:', err));
+        requestModeSwitch('live');
     });
 
+    syncTradingModeButtons(Boolean(window.backendIsTestMode));
     console.log('✅ Mode toggle initialized');
 })();
 
@@ -4414,7 +4486,10 @@ function renderTradeHistory(trades) {
         openai: 'openai_api_key',
         claude: 'claude_api_key',
         qwen: 'qwen_api_key',
-        gemini: 'gemini_api_key'
+        gemini: 'gemini_api_key',
+        kimi: 'kimi_api_key',
+        minimax: 'minimax_api_key',
+        glm: 'glm_api_key'
     };
 
     const resolveProvider = (config) => {
@@ -4768,10 +4843,177 @@ function renderTradeHistory(trades) {
         return { agents: normalized };
     }
 
+    function deepClone(value) {
+        return JSON.parse(JSON.stringify(value ?? {}));
+    }
+
     function ensureAgentConfig(agentId) {
         if (!agentSettings.agents[agentId]) {
             agentSettings.agents[agentId] = { params: {}, system_prompt: '' };
         }
+    }
+
+    function toParamLabel(path) {
+        const key = path.split('.').pop() || path;
+        return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function flattenParamLeaves(obj, prefix = '', out = []) {
+        if (!obj || typeof obj !== 'object') return out;
+        Object.entries(obj).forEach(([key, value]) => {
+            const path = prefix ? `${prefix}.${key}` : key;
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                flattenParamLeaves(value, path, out);
+                return;
+            }
+            out.push({ path, value });
+        });
+        return out;
+    }
+
+    function setNestedValue(target, path, value) {
+        const keys = String(path || '').split('.');
+        if (!keys.length) return;
+        let ref = target;
+        for (let i = 0; i < keys.length - 1; i += 1) {
+            const k = keys[i];
+            if (!ref[k] || typeof ref[k] !== 'object' || Array.isArray(ref[k])) {
+                ref[k] = {};
+            }
+            ref = ref[k];
+        }
+        ref[keys[keys.length - 1]] = value;
+    }
+
+    function getSliderSpec(agentId, path, value) {
+        const key = path.split('.').pop() || '';
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return { min: 0, max: 100, step: 1 };
+        }
+
+        if (key === 'temperature') return { min: 0, max: 1, step: 0.01 };
+        if (key === 'max_tokens') return { min: 64, max: 4096, step: 16 };
+        if (agentId === 'decision_core') return { min: 0, max: 1, step: 0.01 };
+        if (path.startsWith('trend_thresholds.')) return { min: 0, max: 100, step: 1 };
+        if (key.includes('leverage')) return { min: 1, max: 125, step: 1 };
+        if (key.includes('interval') && key.includes('hours')) return { min: 1, max: 48, step: 1 };
+        if (key.includes('lookback') && key.includes('hours')) return { min: 1, max: 240, step: 1 };
+        if (key.includes('window') && key.includes('minutes')) return { min: 5, max: 240, step: 5 };
+        if (key.includes('threshold') || key.includes('pct') || key.includes('ratio')) {
+            const max = numericValue <= 1 ? 1 : Math.max(5, Math.ceil(numericValue * 2));
+            const step = numericValue < 0.1 ? 0.001 : 0.01;
+            return { min: 0, max, step };
+        }
+        if (numericValue >= 1000) {
+            const max = Math.max(numericValue * 2, 1000000);
+            return { min: 0, max, step: Math.max(1, Math.floor(max / 500)) };
+        }
+        if (Number.isInteger(numericValue)) {
+            return { min: 0, max: Math.max(10, numericValue * 3), step: 1 };
+        }
+        return { min: 0, max: Math.max(1, Math.ceil(numericValue * 3 * 100) / 100), step: 0.01 };
+    }
+
+    function readParamsFromPanel(agentId) {
+        const base = deepClone(draftInputs[agentId]?.paramsObj ?? agentSettings.agents[agentId]?.params ?? {});
+        const sourceInputs = panelContainer.querySelectorAll('[data-param-source="true"][data-param-path]');
+        sourceInputs.forEach(el => {
+            const path = el.dataset.paramPath;
+            const type = el.dataset.paramType || 'string';
+            if (!path) return;
+            let value;
+            if (type === 'number') {
+                const n = Number(el.value);
+                if (!Number.isFinite(n)) return;
+                value = n;
+            } else if (type === 'boolean') {
+                value = Boolean(el.checked);
+            } else if (type === 'json') {
+                try {
+                    value = JSON.parse(el.value || 'null');
+                } catch (_) {
+                    value = el.value || '';
+                }
+            } else {
+                value = el.value ?? '';
+            }
+            setNestedValue(base, path, value);
+        });
+        return base;
+    }
+
+    function renderParamControls(agentId, paramsObj) {
+        const container = panelContainer.querySelector('[data-field="params-controls"]');
+        if (!container) return;
+        const leaves = flattenParamLeaves(paramsObj);
+        if (!leaves.length) {
+            container.innerHTML = '<p class="agent-config-param-empty">No parameters available.</p>';
+            return;
+        }
+
+        const html = leaves.map(({ path, value }) => {
+            const safePath = path.replace(/"/g, '&quot;');
+            const label = toParamLabel(path);
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                const spec = getSliderSpec(agentId, path, value);
+                return `
+                    <div class="agent-config-param-item">
+                        <div class="agent-config-param-head">
+                            <span class="agent-config-param-name">${label}</span>
+                            <span class="agent-config-param-value" data-param-display="${safePath}">${value}</span>
+                        </div>
+                        <div class="agent-config-param-controls">
+                            <input type="range" data-param-range="${safePath}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${value}" />
+                            <input type="number" data-param-source="true" data-param-type="number" data-param-path="${safePath}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${value}" />
+                        </div>
+                    </div>
+                `;
+            }
+            if (typeof value === 'boolean') {
+                return `
+                    <div class="agent-config-param-item agent-config-param-inline">
+                        <label class="agent-config-param-name">${label}</label>
+                        <input type="checkbox" data-param-source="true" data-param-type="boolean" data-param-path="${safePath}" ${value ? 'checked' : ''} />
+                    </div>
+                `;
+            }
+            const stringValue = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+            const type = typeof value === 'string' ? 'string' : 'json';
+            return `
+                <div class="agent-config-param-item">
+                    <label class="agent-config-param-name">${label}</label>
+                    <input type="text" data-param-source="true" data-param-type="${type}" data-param-path="${safePath}" value="${String(stringValue).replace(/"/g, '&quot;')}" />
+                </div>
+            `;
+        }).join('');
+        container.innerHTML = `<div class="agent-config-param-list">${html}</div>`;
+
+        container.querySelectorAll('input[data-param-range]').forEach(rangeEl => {
+            const path = rangeEl.dataset.paramRange;
+            const numberEl = Array.from(
+                container.querySelectorAll('input[data-param-source="true"][data-param-path]')
+            ).find(el => el.dataset.paramPath === path);
+            const displayEl = Array.from(
+                container.querySelectorAll('[data-param-display]')
+            ).find(el => el.dataset.paramDisplay === path);
+            const sync = (nextValue) => {
+                if (numberEl) numberEl.value = nextValue;
+                if (displayEl) displayEl.textContent = nextValue;
+            };
+            rangeEl.addEventListener('input', () => sync(rangeEl.value));
+            if (numberEl) {
+                numberEl.addEventListener('input', () => {
+                    const n = Number(numberEl.value);
+                    if (!Number.isFinite(n)) return;
+                    const min = Number(rangeEl.min);
+                    const max = Number(rangeEl.max);
+                    const clamped = Math.min(max, Math.max(min, n));
+                    rangeEl.value = String(clamped);
+                    if (displayEl) displayEl.textContent = String(clamped);
+                });
+            }
+        });
     }
 
     function renderAgentTabs() {
@@ -4791,103 +5033,90 @@ function renderTradeHistory(trades) {
         });
     }
 
-        function renderAgentPanel(agentId) {
-            if (!agentId) return;
-            ensureAgentConfig(agentId);
-            const def = AGENT_DEFS.find(item => item.id === agentId);
-            const draft = draftInputs[agentId];
-            const paramsText = draft?.paramsText ?? JSON.stringify(agentSettings.agents[agentId].params || {}, null, 2);
-            const promptText = draft?.promptText ?? (agentSettings.agents[agentId].system_prompt || '');
-            const enabledValue = draft?.enabled ?? agentEnabled?.[agentId];
-            const isEnabled = enabledValue === undefined ? true : Boolean(enabledValue);
-            const isRequired = Boolean(def?.required);
+    function renderAgentPanel(agentId) {
+        if (!agentId) return;
+        ensureAgentConfig(agentId);
+        const def = AGENT_DEFS.find(item => item.id === agentId);
+        const draft = draftInputs[agentId];
+        const paramsObj = deepClone(draft?.paramsObj ?? (agentSettings.agents[agentId].params || {}));
+        const promptText = draft?.promptText ?? (agentSettings.agents[agentId].system_prompt || '');
+        const enabledValue = draft?.enabled ?? agentEnabled?.[agentId];
+        const isEnabled = enabledValue === undefined ? true : Boolean(enabledValue);
+        const isRequired = Boolean(def?.required);
 
-            panelContainer.innerHTML = `
+        panelContainer.innerHTML = `
             <div class="agent-config-section">
                 <h4>${def?.label || agentId}</h4>
                 <div class="agent-config-row agent-config-toggle-row">
                     <label>Enable Agent${isRequired ? ' (Required)' : ''}</label>
                     <input type="checkbox" data-field="enabled" ${isEnabled ? 'checked' : ''} ${isRequired ? 'disabled' : ''} />
                 </div>
-                <div class="agent-config-row">
-                    <label>Parameters (JSON)</label>
-                    <textarea data-field="params" rows="10" spellcheck="false"></textarea>
+                <div class="agent-config-row agent-config-row-params">
+                    <label>Parameters</label>
+                    <div data-field="params-controls"></div>
                 </div>
                 ${def?.hasPrompt ? `
-                <div class="agent-config-row">
+                <div class="agent-config-row agent-config-row-prompt">
                     <label>System Prompt (applies only when LLM is enabled)</label>
                     <textarea data-field="system_prompt" rows="6" spellcheck="false"></textarea>
                 </div>` : ''}
             </div>
         `;
 
-        const paramsEl = panelContainer.querySelector('textarea[data-field="params"]');
-        if (paramsEl) paramsEl.value = paramsText;
         const promptEl = panelContainer.querySelector('textarea[data-field="system_prompt"]');
         if (promptEl) promptEl.value = promptText;
+        renderParamControls(agentId, paramsObj);
     }
 
-        function stashDraft(agentId) {
-            if (!agentId) return;
-            const paramsEl = panelContainer.querySelector('textarea[data-field="params"]');
-            const promptEl = panelContainer.querySelector('textarea[data-field="system_prompt"]');
-            const enabledEl = panelContainer.querySelector('input[data-field="enabled"]');
-            draftInputs[agentId] = {
-                paramsText: paramsEl ? paramsEl.value : '',
-                promptText: promptEl ? promptEl.value : '',
-                enabled: enabledEl ? enabledEl.checked : undefined
-            };
-        }
+    function stashDraft(agentId) {
+        if (!agentId) return;
+        const promptEl = panelContainer.querySelector('textarea[data-field="system_prompt"]');
+        const enabledEl = panelContainer.querySelector('input[data-field="enabled"]');
+        draftInputs[agentId] = {
+            paramsObj: readParamsFromPanel(agentId),
+            promptText: promptEl ? promptEl.value : '',
+            enabled: enabledEl ? enabledEl.checked : undefined
+        };
+    }
 
-        function buildSettingsPayload() {
-            const payload = {
-                agents: JSON.parse(JSON.stringify(agentSettings.agents || {}))
-            };
-            const enabledPayload = {};
-            const applyEnableChange = (localKey, llmKey, enabled) => {
-                if (enabled === true) {
-                    enabledPayload[localKey] = true;
-                } else if (enabled === false) {
-                    enabledPayload[localKey] = false;
-                    if (llmKey) enabledPayload[llmKey] = false;
-                }
-            };
-            AGENT_DEFS.forEach(def => {
-                const draft = draftInputs[def.id];
-                const base = agentSettings.agents[def.id] || { params: {}, system_prompt: '' };
-                const paramsRaw = draft?.paramsText ?? JSON.stringify(base.params || {}, null, 2);
-                const promptRaw = (draft?.promptText ?? base.system_prompt) || '';
-                if (draft?.enabled !== undefined && !def.required) {
-                    if (def.id === 'symbol_selector') {
-                        applyEnableChange('symbol_selector_agent', null, draft.enabled);
-                    } else if (def.id === 'trend_agent') {
-                        applyEnableChange('trend_agent_local', 'trend_agent_llm', draft.enabled);
-                    } else if (def.id === 'setup_agent') {
-                        applyEnableChange('setup_agent_local', 'setup_agent_llm', draft.enabled);
-                    } else if (def.id === 'trigger_agent') {
-                        applyEnableChange('trigger_agent_local', 'trigger_agent_llm', draft.enabled);
-                    } else if (def.id === 'reflection_agent') {
-                        applyEnableChange('reflection_agent_local', 'reflection_agent_llm', draft.enabled);
-                    }
-                }
-                let parsedParams = {};
-                if (paramsRaw && paramsRaw.trim()) {
-                    try {
-                        parsedParams = JSON.parse(paramsRaw);
-                } catch (err) {
-                    activeAgentId = def.id;
-                    renderAgentTabs();
-                    renderAgentPanel(activeAgentId);
-                    throw new Error(`Invalid JSON in ${def.label} parameters`);
+    function buildSettingsPayload() {
+        const payload = {
+            agents: deepClone(agentSettings.agents || {})
+        };
+        const enabledPayload = {};
+        const applyEnableChange = (localKey, llmKey, enabled) => {
+            if (enabled === true) {
+                enabledPayload[localKey] = true;
+            } else if (enabled === false) {
+                enabledPayload[localKey] = false;
+                if (llmKey) enabledPayload[llmKey] = false;
+            }
+        };
+        AGENT_DEFS.forEach(def => {
+            const draft = draftInputs[def.id];
+            const base = agentSettings.agents[def.id] || { params: {}, system_prompt: '' };
+            const paramsObj = deepClone(draft?.paramsObj ?? base.params ?? {});
+            const promptRaw = (draft?.promptText ?? base.system_prompt) || '';
+            if (draft?.enabled !== undefined && !def.required) {
+                if (def.id === 'symbol_selector') {
+                    applyEnableChange('symbol_selector_agent', null, draft.enabled);
+                } else if (def.id === 'trend_agent') {
+                    applyEnableChange('trend_agent_local', 'trend_agent_llm', draft.enabled);
+                } else if (def.id === 'setup_agent') {
+                    applyEnableChange('setup_agent_local', 'setup_agent_llm', draft.enabled);
+                } else if (def.id === 'trigger_agent') {
+                    applyEnableChange('trigger_agent_local', 'trigger_agent_llm', draft.enabled);
+                } else if (def.id === 'reflection_agent') {
+                    applyEnableChange('reflection_agent_local', 'reflection_agent_llm', draft.enabled);
                 }
             }
-                payload.agents[def.id] = {
-                    params: parsedParams,
-                    system_prompt: promptRaw || ''
-                };
-            });
-            return { settings: payload, enabled: enabledPayload };
-        }
+            payload.agents[def.id] = {
+                params: paramsObj,
+                system_prompt: promptRaw || ''
+            };
+        });
+        return { settings: payload, enabled: enabledPayload };
+    }
 
         function updateLlmBadge(llmInfo) {
         if (!llmInfoBadge || !llmProviderText || !llmModelText) return;

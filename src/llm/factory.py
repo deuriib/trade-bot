@@ -12,6 +12,9 @@ from .deepseek_client import DeepSeekClient
 from .claude_client import ClaudeClient
 from .qwen_client import QwenClient
 from .gemini_client import GeminiClient
+from .kimi_client import KimiClient
+from .minimax_client import MiniMaxClient
+from .glm_client import GLMClient
 
 
 # 注册所有支持的提供商
@@ -21,6 +24,9 @@ PROVIDERS: Dict[str, Type[BaseLLMClient]] = {
     "claude": ClaudeClient,
     "qwen": QwenClient,
     "gemini": GeminiClient,
+    "kimi": KimiClient,
+    "minimax": MiniMaxClient,
+    "glm": GLMClient,
 }
 
 
@@ -29,7 +35,7 @@ def create_client(provider: str, config: LLMConfig) -> BaseLLMClient:
     工厂方法：根据 provider 创建对应客户端
     
     Args:
-        provider: 提供商名称 (openai, deepseek, claude, qwen, gemini)
+        provider: 提供商名称 (openai, deepseek, claude, qwen, gemini, kimi, minimax, glm)
         config: LLM 配置
         
     Returns:

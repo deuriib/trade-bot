@@ -14,10 +14,10 @@ from src.utils.logger import log
 class BinanceClient:
     """Binance API 客户端封装"""
     
-    def __init__(self):
-        self.api_key = config.binance.get('api_key')
-        self.api_secret = config.binance.get('api_secret')
-        self.testnet = config.binance.get('testnet', True)
+    def __init__(self, api_key: str = None, api_secret: str = None, testnet: bool = None):
+        self.api_key = api_key or config.binance.get('api_key')
+        self.api_secret = api_secret or config.binance.get('api_secret')
+        self.testnet = testnet if testnet is not None else config.binance.get('testnet', True)
         self.offline = False
         
         # 初始化客户端
@@ -237,6 +237,41 @@ class BinanceClient:
         except BinanceAPIException as e:
             log.error(f"Failed to get account balance: {e}")
             raise
+
+    def set_leverage(self, symbol: str, leverage: int) -> bool:
+        """设置合约杠杆倍数（兼容主流程调用）"""
+        if self.client is None:
+            raise ConnectionError("Binance client unavailable (offline mode)")
+        try:
+            lev = int(leverage)
+            # Binance futures leverage bounds
+            lev = max(1, min(125, lev))
+            self.client.futures_change_leverage(
+                symbol=symbol,
+                leverage=lev
+            )
+            log.info(f"Leverage set: {symbol} -> {lev}x")
+            return True
+        except BinanceAPIException as e:
+            log.error(f"Failed to set leverage for {symbol}: {e}")
+            raise
+
+    def place_futures_market_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        reduce_only: bool = False,
+        position_side: str = 'BOTH'
+    ) -> Dict:
+        """兼容旧调用名：实质转发到 place_market_order。"""
+        return self.place_market_order(
+            symbol=symbol,
+            side=side,
+            quantity=quantity,
+            reduce_only=reduce_only,
+            position_side=position_side
+        )
     
     def get_funding_rate(self, symbol: str) -> Dict:
         """获取资金费率 (实时 - Premium Index)"""
