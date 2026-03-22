@@ -191,10 +191,99 @@ class RiskAuditAgent:
         t_1h = trend_scores.get('trend_1h_score')
         t_15m = trend_scores.get('trend_15m_score')
         t_5m = trend_scores.get('trend_5m_score')
+        four_layer = decision.get('four_layer') if isinstance(decision.get('four_layer'), dict) else {}
+        pos_1h = decision.get('position_1h') if isinstance(decision.get('position_1h'), dict) else None
         sentiment_score = decision.get('sentiment_score')
         symbol_loss_streak = decision.get('symbol_loss_streak', 0)
         symbol_recent_pnl = decision.get('symbol_recent_pnl')
         symbol_recent_trades = decision.get('symbol_recent_trades', 0)
+        symbol_long_loss_streak = decision.get('symbol_long_loss_streak', symbol_loss_streak)
+        symbol_long_recent_pnl = decision.get('symbol_long_recent_pnl', symbol_recent_pnl)
+        symbol_long_recent_trades = decision.get('symbol_long_recent_trades', symbol_recent_trades)
+        symbol_short_loss_streak = decision.get('symbol_short_loss_streak', symbol_loss_streak)
+        symbol_short_recent_pnl = decision.get('symbol_short_recent_pnl', symbol_recent_pnl)
+        symbol_short_recent_trades = decision.get('symbol_short_recent_trades', symbol_recent_trades)
+        continuation_guard = self._allow_continuation_guard(
+            action=action,
+            confidence=confidence,
+            trend_scores=trend_scores,
+            regime_name=regime_name,
+            four_layer=four_layer
+        )
+        if continuation_guard:
+            warnings.append("⚡ 强趋势延续信号已确认：部分风控阈值放宽")
+
+        # 0.15 1h位置方向硬拦截 (Hard Veto)
+        if is_open_action(action) and pos_1h:
+            allow_long = pos_1h.get('allow_long')
+            allow_short = pos_1h.get('allow_short')
+            pos_pct = pos_1h.get('position_pct')
+            location = pos_1h.get('location', 'unknown')
+            pos_desc = f"1h位置={location}"
+            if isinstance(pos_pct, (int, float)):
+                pos_desc = f"{pos_desc}({pos_pct:.1f}%)"
+
+            if is_long and allow_long is False:
+                if self._allow_position_override(
+                    action=action,
+                    confidence=confidence,
+                    trend_scores=trend_scores,
+                    regime_name=regime_name,
+                    position_1h=pos_1h
+                ):
+                    warnings.append(f"⚠️ 1h方向过滤触发突破放行: {pos_desc} (long breakout override)")
+                else:
+                    return self._block_decision(
+                        'total_blocks',
+                        f"1h方向过滤拦截: 当前{pos_desc}禁止做多(allow_long=False)"
+                    )
+            if is_short and allow_short is False:
+                if self._allow_position_override(
+                    action=action,
+                    confidence=confidence,
+                    trend_scores=trend_scores,
+                    regime_name=regime_name,
+                    position_1h=pos_1h
+                ):
+                    warnings.append(f"⚠️ 1h方向过滤触发突破放行: {pos_desc} (short breakdown override)")
+                else:
+                    return self._block_decision(
+                        'total_blocks',
+                        f"1h方向过滤拦截: 当前{pos_desc}禁止做空(allow_short=False)"
+                    )
+
+        # 0.16 震荡市多周期冲突拦截 (Conflict Veto)
+        if is_open_action(action) and self._is_sideways_regime(regime_name):
+            trend_points = {
+                '1h': t_1h,
+                '15m': t_15m,
+                '5m': t_5m
+            }
+            bullish = {tf: score for tf, score in trend_points.items() if isinstance(score, (int, float)) and score >= 15}
+            bearish = {tf: score for tf, score in trend_points.items() if isinstance(score, (int, float)) and score <= -15}
+            if bullish and bearish:
+                bullish_txt = ", ".join(f"{tf}:{v:+.0f}" for tf, v in bullish.items())
+                bearish_txt = ", ".join(f"{tf}:{v:+.0f}" for tf, v in bearish.items())
+                if confidence < 85:
+                    return self._block_decision(
+                        'total_blocks',
+                        f"震荡市多周期趋势冲突(bull=[{bullish_txt}] vs bear=[{bearish_txt}])，禁止开仓"
+                    )
+                warnings.append(
+                    f"⚠️ 震荡市多周期趋势冲突(bull=[{bullish_txt}] vs bear=[{bearish_txt}])，仅因高信心放行"
+                )
+
+            if is_long and isinstance(t_1h, (int, float)) and t_1h <= -35 and confidence < 90:
+                return self._block_decision(
+                    'total_blocks',
+                    f"震荡市1h空头趋势明显(1h={t_1h:+.0f})，拦截逆向做多"
+                )
+            if is_short and isinstance(t_1h, (int, float)) and t_1h >= 35 and confidence < 90:
+                return self._block_decision(
+                    'total_blocks',
+                    f"震荡市1h多头趋势明显(1h={t_1h:+.0f})，拦截逆向做空"
+                )
+
         osc_scores = decision.get('oscillator_scores') or decision.get('oscillator') or {}
         osc_values = [
             osc_scores.get('osc_1h_score'),
@@ -220,35 +309,52 @@ class RiskAuditAgent:
                 if t_1h <= -50 and t_15m <= -15 and osc_min <= -30 and 'uptrend' not in regime_name:
                     short_strong_setup = True
         short_confidence = confidence >= 55
+
+        if is_long and isinstance(symbol_long_loss_streak, (int, float)) and symbol_long_loss_streak >= 2:
+            if confidence < 80 and not long_strong_setup:
+                return self._block_decision('total_blocks', f"{symbol}多头连续亏损{int(symbol_long_loss_streak)}次，触发冷却")
+            warnings.append(f"⚠️ {symbol}多头连续亏损{int(symbol_long_loss_streak)}次，谨慎做多")
+        if is_long and isinstance(symbol_long_recent_pnl, (int, float)) and symbol_long_recent_trades >= 3:
+            long_loss_threshold = -max(2.0, account_balance * 0.003)
+            if symbol_long_recent_pnl <= long_loss_threshold and confidence < 80 and not long_strong_setup:
+                return self._block_decision(
+                    'total_blocks',
+                    f"{symbol}多头近{symbol_long_recent_trades}单净亏损{symbol_long_recent_pnl:.2f}，暂停多单"
+                )
+            if symbol_long_recent_pnl < 0:
+                warnings.append(f"⚠️ {symbol}多头近{symbol_long_recent_trades}单净亏损{symbol_long_recent_pnl:.2f}")
+
         if is_short and not short_confidence:
-            return self._block_decision('total_blocks', f"空头信心不足({confidence:.1f} < 55)，拦截做空")
+            if not continuation_guard or confidence < 52:
+                return self._block_decision('total_blocks', f"空头信心不足({confidence:.1f} < 55)，拦截做空")
+            warnings.append(f"⚠️ 空头信心略低({confidence:.1f})，因延续信号放宽")
         if is_short and not short_strong_setup:
-            if confidence < 65:
+            if confidence < 65 and not continuation_guard:
                 return self._block_decision('total_blocks', "空头信号未达到强共振条件，拦截做空")
             warnings.append("⚠️ 空头共振偏弱，谨慎做空")
-        if is_short and isinstance(symbol_loss_streak, (int, float)) and symbol_loss_streak >= 2:
+        if is_short and isinstance(symbol_short_loss_streak, (int, float)) and symbol_short_loss_streak >= 2:
             if confidence < 80 and not short_strong_setup:
-                return self._block_decision('total_blocks', f"{symbol}空头连续亏损{int(symbol_loss_streak)}次，触发冷却")
-            warnings.append(f"⚠️ {symbol}空头连续亏损{int(symbol_loss_streak)}次，谨慎做空")
-        if is_short and isinstance(symbol_recent_pnl, (int, float)) and symbol_recent_trades >= 3:
+                return self._block_decision('total_blocks', f"{symbol}空头连续亏损{int(symbol_short_loss_streak)}次，触发冷却")
+            warnings.append(f"⚠️ {symbol}空头连续亏损{int(symbol_short_loss_streak)}次，谨慎做空")
+        if is_short and isinstance(symbol_short_recent_pnl, (int, float)) and symbol_short_recent_trades >= 3:
             loss_threshold = -max(2.0, account_balance * 0.003)
-            if symbol_recent_pnl <= loss_threshold and confidence < 80:
-                return self._block_decision('total_blocks', f"{symbol}近{symbol_recent_trades}单净亏损{symbol_recent_pnl:.2f}，暂停空单")
-            if symbol_recent_pnl < 0:
-                warnings.append(f"⚠️ {symbol}近{symbol_recent_trades}单净亏损{symbol_recent_pnl:.2f}")
+            if symbol_short_recent_pnl <= loss_threshold and confidence < 80 and not continuation_guard:
+                return self._block_decision('total_blocks', f"{symbol}空头近{symbol_short_recent_trades}单净亏损{symbol_short_recent_pnl:.2f}，暂停空单")
+            if symbol_short_recent_pnl < 0:
+                warnings.append(f"⚠️ {symbol}空头近{symbol_short_recent_trades}单净亏损{symbol_short_recent_pnl:.2f}")
         if is_short and regime_name == 'volatile_directionless' and not short_strong_setup:
-            if confidence < 70:
+            if confidence < 70 and not continuation_guard:
                 return self._block_decision('total_blocks', "震荡无方向区间，空头需更高信心")
-            if isinstance(t_1h, (int, float)) and t_1h > -45:
+            if isinstance(t_1h, (int, float)) and t_1h > -45 and not continuation_guard:
                 return self._block_decision('total_blocks', f"震荡无方向区间，空头趋势不足(1h={t_1h:+.0f})")
-            if osc_min is not None and osc_min > -20:
+            if osc_min is not None and osc_min > -20 and not continuation_guard:
                 return self._block_decision('total_blocks', f"震荡无方向区间，空头超买不足(最弱:{osc_min:+.0f})")
             warnings.append("⚠️ 震荡无方向区间空头风险偏高")
         if is_short and isinstance(sentiment_score, (int, float)) and sentiment_score > 20:
-            if confidence < 80 and not short_strong_setup:
+            if confidence < 80 and not short_strong_setup and not continuation_guard:
                 return self._block_decision('total_blocks', f"市场情绪偏多({sentiment_score:+.0f})，空头拦截")
             warnings.append(f"⚠️ 市场情绪偏多({sentiment_score:+.0f})，谨慎做空")
-        if is_short and isinstance(atr_pct, (int, float)) and atr_pct > 3.0 and confidence < 75:
+        if is_short and isinstance(atr_pct, (int, float)) and atr_pct > 3.0 and confidence < 75 and not continuation_guard:
             return self._block_decision('total_blocks', f"高波动空头风险过高(ATR {atr_pct:.2f}%)")
         # 🔧 OPTIMIZATION: Relax symbol-specific filters (was blocking all trades)
         # Changed from hard blocks to conditional warnings
@@ -256,14 +362,14 @@ class RiskAuditAgent:
         
         # FILUSDT: Discourage SHORT but allow with high confidence
         if symbol_upper == "FILUSDT":
-            if is_short and confidence < 70:
+            if is_short and confidence < 70 and not continuation_guard:
                 return self._block_decision('total_blocks', "FILUSDT做空需高信心(≥70%)")
             elif is_short:
                 warnings.append("⚠️ FILUSDT做空风险较高，谨慎操作")
         
         # FETUSDT: Similar relaxation
         if symbol_upper == "FETUSDT":
-            if is_short and confidence < 70:
+            if is_short and confidence < 70 and not continuation_guard:
                 return self._block_decision('total_blocks', "FETUSDT做空需高信心(≥70%)")
         
         # 🔧 OPTIMIZATION: Relax LINKUSDT/FILUSDT LONG requirements
@@ -300,7 +406,7 @@ class RiskAuditAgent:
                 warnings.append(f"⚠️ 做多位置偏高({pos_pct:.1f}%)，谨慎开仓")
             
             if is_short and short_pos_pct < short_pos_threshold:
-                if confidence < 70 and not short_strong_setup:
+                if confidence < 70 and not short_strong_setup and not continuation_guard:
                     return self._block_decision('total_blocks', f"做空位置偏低({short_pos_pct:.1f}%)，需接近1h阻力带(≥{short_pos_threshold:.0f}%)")
                 warnings.append(f"⚠️ 做空位置偏低({short_pos_pct:.1f}%)，谨慎开仓")
 
@@ -326,7 +432,7 @@ class RiskAuditAgent:
             if is_short and osc_max >= 50:
                 return self._block_decision('total_blocks', f"震荡指标强烈超卖({osc_max:.0f})，避免追低做空")
             if is_short and osc_min > -15:
-                if confidence < 70:
+                if confidence < 70 and not continuation_guard:
                     return self._block_decision('total_blocks', f"空头缺乏超买信号(最弱:{osc_min:+.0f})，避免弱势做空")
                 warnings.append(f"⚠️ 空头超买信号偏弱(最弱:{osc_min:+.0f})")
 
@@ -337,18 +443,18 @@ class RiskAuditAgent:
         if is_short:
             # 若缺少趋势分数，则跳过此规则
             if isinstance(t_1h, (int, float)) and t_1h > -50:
-                if confidence < 70:
+                if confidence < 70 and not continuation_guard:
                     return self._block_decision('total_blocks', f"空头趋势不足(1h={t_1h:+.0f})，避免逆势做空")
                 warnings.append(f"⚠️ 空头趋势偏弱(1h={t_1h:+.0f})，谨慎做空")
             if isinstance(t_15m, (int, float)) and t_15m > -15:
-                if confidence < 70:
+                if confidence < 70 and not continuation_guard:
                     return self._block_decision('total_blocks', f"空头趋势不足(15m={t_15m:+.0f})，避免逆势做空")
                 warnings.append(f"⚠️ 空头趋势偏弱(15m={t_15m:+.0f})，谨慎做空")
             # Regime 反向过滤 (仅在可识别趋势时启用)
             regime = decision.get('regime') or {}
             regime_name = str(regime.get('regime', '')).lower()
             if regime_name in ['trending_up'] or 'uptrend' in regime_name:
-                if confidence < 70:
+                if confidence < 70 and not continuation_guard:
                     return self._block_decision('total_blocks', f"趋势向上({regime.get('regime')}), 禁止逆势做空")
                 warnings.append(f"⚠️ 趋势向上({regime.get('regime')}), 谨慎做空")
 
@@ -483,6 +589,102 @@ class RiskAuditAgent:
             corrections=corrections if corrections else None,
             warnings=warnings if warnings else None
         )
+
+    def _allow_continuation_guard(
+        self,
+        *,
+        action: str,
+        confidence: float,
+        trend_scores: Dict,
+        regime_name: str,
+        four_layer: Dict
+    ) -> bool:
+        """Allow limited guard relaxation when four-layer confirms strong continuation."""
+        if not is_open_action(action):
+            return False
+        if not isinstance(four_layer, dict):
+            return False
+        if not all(bool(four_layer.get(k)) for k in ('layer1_pass', 'layer2_pass', 'layer3_pass', 'layer4_pass')):
+            return False
+        if self._is_sideways_regime(regime_name):
+            return False
+        if confidence < 58:
+            return False
+
+        final_action = str(four_layer.get('final_action', '') or '').lower()
+        expected = 'short' if is_short_action(action) else 'long'
+        if final_action != expected:
+            return False
+
+        adx = four_layer.get('adx')
+        if not isinstance(adx, (int, float)) or adx < 24:
+            return False
+
+        trigger_pattern = str(four_layer.get('trigger_pattern', '') or '').lower()
+        if trigger_pattern not in {'breakout', 'engulfing', 'rvol_momentum', 'soft_momentum'}:
+            return False
+
+        t_1h = trend_scores.get('trend_1h_score') if isinstance(trend_scores, dict) else None
+        t_15m = trend_scores.get('trend_15m_score') if isinstance(trend_scores, dict) else None
+        if not isinstance(t_1h, (int, float)) or not isinstance(t_15m, (int, float)):
+            return False
+
+        if expected == 'short':
+            return t_1h <= -45 and t_15m <= -15
+        return t_1h >= 45 and t_15m >= 15
+
+    def _is_sideways_regime(self, regime_name: str) -> bool:
+        """Whether the regime description indicates consolidation/range state."""
+        name = str(regime_name or '').lower()
+        if not name:
+            return False
+        return any(keyword in name for keyword in ('sideways', 'consolidation', 'choppy', 'range', 'directionless'))
+
+    def _allow_position_override(
+        self,
+        *,
+        action: str,
+        confidence: float,
+        trend_scores: Dict,
+        regime_name: str,
+        position_1h: Dict
+    ) -> bool:
+        """Allow rare breakout override when 1h range filter disagrees with strong trend breakout."""
+        if self._is_sideways_regime(regime_name):
+            return False
+        if confidence < 92:
+            return False
+        if not isinstance(position_1h, dict):
+            return False
+
+        location = str(position_1h.get('location', '')).lower()
+        pos_pct = position_1h.get('position_pct')
+        if not isinstance(pos_pct, (int, float)):
+            return False
+
+        t_1h = trend_scores.get('trend_1h_score') if isinstance(trend_scores, dict) else None
+        t_15m = trend_scores.get('trend_15m_score') if isinstance(trend_scores, dict) else None
+        t_5m = trend_scores.get('trend_5m_score') if isinstance(trend_scores, dict) else None
+        if not all(isinstance(v, (int, float)) for v in (t_1h, t_15m, t_5m)):
+            return False
+
+        if action == 'open_long':
+            return (
+                location in {'upper', 'resistance'}
+                and pos_pct >= 70
+                and t_1h >= 55
+                and t_15m >= 25
+                and t_5m >= 10
+            )
+        if action == 'open_short':
+            return (
+                location in {'support', 'lower'}
+                and pos_pct <= 30
+                and t_1h <= -55
+                and t_15m <= -25
+                and t_5m <= -10
+            )
+        return False
     
     
     def _check_duplicate_open(

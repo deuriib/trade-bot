@@ -257,6 +257,9 @@ class MultiAgentTradingBot:
         self.selector_interval_sec = 10 * 60
         self.selector_last_run = 0.0
         self.selector_startup_done = False
+        self.layer4_wait_streak = 0
+        self.layer4_trigger_streak = 0
+        self.layer4_adaptive_state: Dict[str, Dict[str, int]] = {}
 
         # Cycle logging (DB)
         self._cycle_logger = None
@@ -543,6 +546,146 @@ class MultiAgentTradingBot:
             # Refresh LLM metadata in case config changed
             self._update_llm_metadata()
 
+    def _get_agent_setting_params(self, agent_key: str) -> Dict[str, Any]:
+        """Load agent params from shared runtime state; fallback to config/agent_settings.json."""
+        settings = getattr(global_state, "agent_settings", None) or {}
+        agents = settings.get("agents", {}) if isinstance(settings, dict) else {}
+        if isinstance(agents, dict):
+            node = agents.get(agent_key, {})
+            if isinstance(node, dict):
+                params = node.get("params", {})
+                if isinstance(params, dict):
+                    return dict(params)
+
+        settings_path = os.path.join(os.path.dirname(__file__), "config", "agent_settings.json")
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                global_state.agent_settings = data
+                node = (data.get("agents", {}) or {}).get(agent_key, {})
+                if isinstance(node, dict):
+                    params = node.get("params", {})
+                    if isinstance(params, dict):
+                        return dict(params)
+        except Exception:
+            pass
+        return {}
+
+    def _resolve_symbol_selector_params(self, selector: Any) -> Dict[str, Any]:
+        """Resolve symbol-selector params from runtime settings with safe defaults."""
+        params = self._get_agent_setting_params("symbol_selector")
+
+        def _num(name: str, default: float) -> float:
+            try:
+                return float(params.get(name, default))
+            except (TypeError, ValueError):
+                return float(default)
+
+        def _int(name: str, default: int, lower: int = 1) -> int:
+            try:
+                return max(lower, int(params.get(name, default)))
+            except (TypeError, ValueError):
+                return max(lower, int(default))
+
+        interval = str(params.get("auto1_interval", getattr(selector, "AUTO1_INTERVAL", "1m")) or "1m")
+        return {
+            "refresh_interval_hours": _int("refresh_interval_hours", int(getattr(selector, "refresh_interval", 6))),
+            "lookback_hours": _int("lookback_hours", int(getattr(selector, "lookback_hours", 24))),
+            "auto1_window_minutes": _int("auto1_window_minutes", int(getattr(selector, "AUTO1_WINDOW_MINUTES", 30))),
+            "auto1_threshold_pct": _num("auto1_threshold_pct", float(getattr(selector, "AUTO1_THRESHOLD_PCT", 0.8))),
+            "auto1_interval": interval,
+            "auto1_volume_ratio_threshold": _num(
+                "auto1_volume_ratio_threshold",
+                float(getattr(selector, "AUTO1_VOLUME_RATIO_THRESHOLD", 1.2))
+            ),
+            "auto1_min_adx": _num("auto1_min_adx", float(getattr(selector, "AUTO1_MIN_ADX", 20))),
+            "auto1_candidate_top_n": _int(
+                "auto1_candidate_top_n",
+                int(getattr(selector, "AUTO1_CANDIDATE_TOP_N", 15)),
+                lower=3
+            ),
+            "auto1_min_directional_score": _num(
+                "auto1_min_directional_score",
+                float(getattr(selector, "AUTO1_MIN_DIRECTIONAL_SCORE", 2.0))
+            ),
+            "auto1_min_alignment_score": _num(
+                "auto1_min_alignment_score",
+                float(getattr(selector, "AUTO1_MIN_ALIGNMENT_SCORE", 0.0))
+            ),
+            "auto1_relax_factor": _num(
+                "auto1_relax_factor",
+                float(getattr(selector, "AUTO1_RELAX_FACTOR", 0.75))
+            ),
+            "min_quote_volume": _num("min_quote_volume", float(getattr(selector, "min_quote_volume", 5_000_000))),
+            "min_price": _num("min_price", float(getattr(selector, "min_price", 0.05))),
+            "min_quote_volume_per_usdt": _num(
+                "min_quote_volume_per_usdt",
+                float(getattr(selector, "min_quote_volume_per_usdt", 3000))
+            )
+        }
+
+    def _apply_symbol_selector_runtime_params(self, selector: Any, selector_params: Dict[str, Any]) -> None:
+        """Apply selector params immediately so dashboard tuning takes effect in-cycle."""
+        selector.refresh_interval = int(selector_params.get("refresh_interval_hours", selector.refresh_interval))
+        selector.lookback_hours = int(selector_params.get("lookback_hours", selector.lookback_hours))
+        selector.min_quote_volume = float(selector_params.get("min_quote_volume", selector.min_quote_volume))
+        selector.min_price = float(selector_params.get("min_price", selector.min_price))
+        selector.min_quote_volume_per_usdt = float(
+            selector_params.get("min_quote_volume_per_usdt", selector.min_quote_volume_per_usdt)
+        )
+
+    def _get_trigger_state_key(self, symbol: str, trend_1h: str) -> str:
+        return f"{str(symbol or 'UNKNOWN').upper()}::{str(trend_1h or 'neutral').lower()}"
+
+    def _get_trigger_sensitivity(self, *, symbol: str, trend_1h: str, adx: float, strong_trend_alignment: bool) -> float:
+        """
+        Adaptive trigger sensitivity for Layer4.
+        <1.0 => easier trigger (after long wait), >1.0 => stricter trigger.
+        """
+        key = self._get_trigger_state_key(symbol, trend_1h)
+        state = self.layer4_adaptive_state.get(key, {})
+        wait_streak = int(state.get('wait_streak', 0) or 0)
+        trigger_streak = int(state.get('trigger_streak', 0) or 0)
+
+        sensitivity = 1.0
+        if wait_streak >= 16:
+            sensitivity = 0.82
+        elif wait_streak >= 10:
+            sensitivity = 0.88
+        elif wait_streak >= 6:
+            sensitivity = 0.94
+
+        if strong_trend_alignment and adx >= 28:
+            sensitivity = min(sensitivity, 0.9)
+
+        # If triggers are firing too frequently, slightly tighten.
+        if trigger_streak >= 4 and wait_streak == 0:
+            sensitivity = min(1.08, sensitivity + 0.06)
+
+        return max(0.78, min(1.12, float(sensitivity)))
+
+    def _update_trigger_adaptive_state(self, *, symbol: str, trend_1h: str, layer4_pass: bool) -> Dict[str, int]:
+        """Track per-symbol per-direction Layer4 streaks for adaptive sensitivity."""
+        key = self._get_trigger_state_key(symbol, trend_1h)
+        state = self.layer4_adaptive_state.get(key, {"wait_streak": 0, "trigger_streak": 0})
+        wait_streak = int(state.get("wait_streak", 0) or 0)
+        trigger_streak = int(state.get("trigger_streak", 0) or 0)
+
+        if layer4_pass:
+            trigger_streak = min(50, trigger_streak + 1)
+            wait_streak = 0
+        else:
+            wait_streak = min(200, wait_streak + 1)
+            trigger_streak = 0
+
+        updated = {"wait_streak": wait_streak, "trigger_streak": trigger_streak}
+        self.layer4_adaptive_state[key] = updated
+        # Keep compatibility counters for legacy logging/inspection.
+        self.layer4_wait_streak = wait_streak
+        self.layer4_trigger_streak = trigger_streak
+        return updated
+
     def _run_symbol_selector(self, reason: str = "scheduled") -> None:
         """Run symbol selector and update symbols (AUTO1/AUTO3)."""
         if not self.agent_config.symbol_selector_agent:
@@ -569,6 +712,8 @@ class MultiAgentTradingBot:
             log.info(f"🎰 SymbolSelectorAgent ({reason}) running before analysis...")
             global_state.add_log(f"[🎰 SELECTOR] Symbol selection started ({reason})")
             selector = get_selector()
+            selector_params = self._resolve_symbol_selector_params(selector)
+            self._apply_symbol_selector_runtime_params(selector, selector_params)
             account_equity = self._get_account_equity_estimate()
             if hasattr(selector, 'account_equity') and account_equity:
                 selector.account_equity = account_equity
@@ -576,7 +721,26 @@ class MultiAgentTradingBot:
                 top_symbols = asyncio.run(selector.select_top3(force_refresh=False, account_equity=account_equity))
             else:
                 top_symbols = asyncio.run(
-                    selector.select_auto1_recent_momentum(account_equity=account_equity)
+                    selector.select_auto1_recent_momentum(
+                        account_equity=account_equity,
+                        window_minutes=int(selector_params.get("auto1_window_minutes", selector.AUTO1_WINDOW_MINUTES)),
+                        interval=str(selector_params.get("auto1_interval", selector.AUTO1_INTERVAL)),
+                        threshold_pct=float(selector_params.get("auto1_threshold_pct", selector.AUTO1_THRESHOLD_PCT)),
+                        volume_ratio_threshold=float(
+                            selector_params.get("auto1_volume_ratio_threshold", selector.AUTO1_VOLUME_RATIO_THRESHOLD)
+                        ),
+                        min_adx=float(selector_params.get("auto1_min_adx", selector.AUTO1_MIN_ADX)),
+                        candidate_top_n=int(
+                            selector_params.get("auto1_candidate_top_n", selector.AUTO1_CANDIDATE_TOP_N)
+                        ),
+                        min_directional_score=float(
+                            selector_params.get("auto1_min_directional_score", selector.AUTO1_MIN_DIRECTIONAL_SCORE)
+                        ),
+                        min_alignment_score=float(
+                            selector_params.get("auto1_min_alignment_score", selector.AUTO1_MIN_ALIGNMENT_SCORE)
+                        ),
+                        relax_factor=float(selector_params.get("auto1_relax_factor", selector.AUTO1_RELAX_FACTOR))
+                    )
                 ) or []
 
             if top_symbols:
@@ -612,7 +776,57 @@ class MultiAgentTradingBot:
                     score = metrics.get("score")
                     if isinstance(score, (int, float)):
                         selector_payload["score"] = score
+                    adx = metrics.get("adx")
+                    if isinstance(adx, (int, float)):
+                        selector_payload["adx"] = adx
+                    alignment_score = metrics.get("alignment_score")
+                    if isinstance(alignment_score, (int, float)):
+                        selector_payload["alignment_score"] = alignment_score
+                    impulse_ratio = metrics.get("impulse_ratio")
+                    if isinstance(impulse_ratio, (int, float)):
+                        selector_payload["impulse_ratio"] = impulse_ratio
+                    freshness_score = metrics.get("freshness_score")
+                    if isinstance(freshness_score, (int, float)):
+                        selector_payload["freshness_score"] = freshness_score
+                    directional_edge = metrics.get("directional_range_position")
+                    if isinstance(directional_edge, (int, float)):
+                        selector_payload["directional_edge"] = directional_edge
+
+                    all_metrics = auto1.get("results", {})
+                    if isinstance(all_metrics, dict) and all_metrics:
+                        def _safe_float(value: Any, default: float = 0.0) -> float:
+                            try:
+                                return float(value)
+                            except (TypeError, ValueError):
+                                return float(default)
+
+                        ranked = []
+                        for sym, item in all_metrics.items():
+                            if not isinstance(item, dict):
+                                continue
+                            item_change = _safe_float(item.get("change_pct", 0) or 0)
+                            item_score = _safe_float(item.get("score", 0) or 0)
+                            if item_change > 0:
+                                item_dir = "UP"
+                            elif item_change < 0:
+                                item_dir = "DOWN"
+                            else:
+                                item_dir = "FLAT"
+                            ranked.append({
+                                "symbol": sym,
+                                "direction": item_dir,
+                                "change_pct": item_change,
+                                "score": item_score,
+                                "volume_ratio": _safe_float(item.get("volume_ratio", 0) or 0),
+                                "alignment_score": _safe_float(item.get("alignment_score", 0) or 0),
+                                "impulse_ratio": _safe_float(item.get("impulse_ratio", 0) or 0),
+                                "freshness_score": _safe_float(item.get("freshness_score", 0) or 0),
+                                "directional_edge": _safe_float(item.get("directional_range_position", 0) or 0),
+                            })
+                        ranked.sort(key=lambda x: x.get("score", 0), reverse=True)
+                        selector_payload["ranked_candidates"] = ranked[:5]
                     selector_payload["window_minutes"] = auto1.get("window_minutes")
+                    selector_payload["threshold_pct"] = auto1.get("threshold_pct")
                 global_state.symbol_selector = selector_payload
                 if self.primary_symbol not in self.symbols:
                     self.primary_symbol = self.current_symbol
@@ -643,6 +857,53 @@ class MultiAgentTradingBot:
             self.selector_last_run = selector_started
             if reason == "startup":
                 self.selector_startup_done = True
+
+    def _get_auto1_execution_bonus(self, symbol: str) -> float:
+        """
+        Return bounded confidence bonus from AUTO1 symbol-quality metrics.
+        Applied only as tie-break/priority nudging when multiple symbols are suggested.
+        """
+        if not symbol:
+            return 0.0
+        if not self.agent_config.symbol_selector_agent or self.use_auto3:
+            return 0.0
+
+        try:
+            selector = get_selector()
+            auto1 = getattr(selector, "last_auto1", {}) or {}
+            metrics = (auto1.get("results", {}) or {}).get(symbol, {})
+            if not isinstance(metrics, dict) or not metrics:
+                return 0.0
+        except Exception:
+            return 0.0
+
+        def _safe_float(value: Any, default: float = 0.0) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return float(default)
+
+        change_abs = abs(_safe_float(metrics.get("change_pct", 0) or 0))
+        score = max(0.0, _safe_float(metrics.get("score", 0) or 0))
+        alignment = max(0.0, _safe_float(metrics.get("alignment_score", 0) or 0))
+        impulse = max(0.0, _safe_float(metrics.get("impulse_ratio", 0) or 0))
+        freshness = max(0.0, _safe_float(metrics.get("freshness_score", 0) or 0))
+        edge = max(0.0, min(1.0, _safe_float(metrics.get("directional_range_position", 0.5) or 0.5)))
+        volume_ratio = max(0.0, _safe_float(metrics.get("volume_ratio", 1.0) or 1.0))
+
+        bonus = 0.0
+        bonus += min(3.0, max(0.0, change_abs - 0.5) * 1.2)
+        bonus += min(2.6, score * 0.25)
+        bonus += min(1.4, alignment * 1.6)
+        bonus += min(1.2, impulse * 0.7)
+        bonus += min(0.9, freshness * 0.8)
+        bonus += min(0.9, edge * 1.0)
+        if volume_ratio >= 1.3:
+            bonus += 0.7
+        elif volume_ratio >= 1.1:
+            bonus += 0.4
+
+        return max(0.0, min(8.5, float(bonus)))
 
     def _get_active_position_symbols(self) -> List[str]:
         """Return symbols with active positions (test + live)."""
@@ -1602,6 +1863,45 @@ class MultiAgentTradingBot:
                     predict_result=predict_result,
                     market_data=market_data
                 )
+                four_layer = getattr(global_state, 'four_layer_result', {}) or {}
+                final_action = str(four_layer.get('final_action', 'wait') or 'wait').lower()
+                layers_passed = bool(
+                    four_layer.get('layer1_pass')
+                    and four_layer.get('layer2_pass')
+                    and four_layer.get('layer3_pass')
+                    and four_layer.get('layer4_pass')
+                )
+                has_position = False
+                if current_position_info:
+                    try:
+                        has_position = abs(float(current_position_info.get('quantity', 0) or 0)) > 0
+                    except (TypeError, ValueError):
+                        has_position = True
+
+                if (
+                    not has_position
+                    and vote_core.action in ('wait', 'hold')
+                    and layers_passed
+                    and final_action in ('long', 'short')
+                ):
+                    override_action = 'open_long' if final_action == 'long' else 'open_short'
+                    try:
+                        boost = float(four_layer.get('confidence_boost', 0) or 0)
+                    except (TypeError, ValueError):
+                        boost = 0.0
+                    override_conf = min(85.0, max(60.0, 60.0 + max(0.0, boost)))
+                    vote_core.action = override_action
+                    vote_core.confidence = max(float(vote_core.confidence or 0), override_conf)
+                    base_reason = str(vote_core.reason or "DecisionCore wait")
+                    vote_core.reason = f"{base_reason} | 4-Layer override: {override_action} (layers all pass)"
+                    if not isinstance(vote_core.vote_details, dict):
+                        vote_core.vote_details = {}
+                    vote_core.vote_details['four_layer_override'] = 1.0 if final_action == 'long' else -1.0
+                    log.info(
+                        f"⚡ Decision override applied: {override_action} "
+                        f"(confidence {vote_core.confidence:.1f}%, trigger={four_layer.get('trigger_pattern', 'unknown')})"
+                    )
+
                 size_pct = 0.0
                 if vote_core.trade_params and self.max_position_size:
                     size_pct = min(
@@ -1757,6 +2057,22 @@ class MultiAgentTradingBot:
             'trend_15m_score': trend_data.get('trend_15m_score', 0),
             'trend_5m_score': trend_data.get('trend_5m_score', 0)
         }
+        four_layer = getattr(global_state, 'four_layer_result', {}) or {}
+        if isinstance(four_layer, dict):
+            order_params['four_layer'] = {
+                'layer1_pass': bool(four_layer.get('layer1_pass')),
+                'layer2_pass': bool(four_layer.get('layer2_pass')),
+                'layer3_pass': bool(four_layer.get('layer3_pass')),
+                'layer4_pass': bool(four_layer.get('layer4_pass')),
+                'final_action': four_layer.get('final_action', 'wait'),
+                'trigger_pattern': four_layer.get('trigger_pattern'),
+                'setup_quality': four_layer.get('setup_quality'),
+                'setup_override': four_layer.get('setup_override'),
+                'trend_continuation_mode': bool(four_layer.get('trend_continuation_mode')),
+                'adx': four_layer.get('adx'),
+                'oi_change': four_layer.get('oi_change'),
+                'trigger_rvol': four_layer.get('trigger_rvol'),
+            }
 
         try:
             if self.agent_config.position_analyzer_agent:
@@ -2520,6 +2836,19 @@ class MultiAgentTradingBot:
         oi_divergence_warning = None
         oi_divergence_warn = 15.0
         oi_divergence_block = 60.0
+        trend_scores = quant_analysis.get('trend', {}) if isinstance(quant_analysis, dict) else {}
+        t_1h = float(trend_scores.get('trend_1h_score', 0) or 0)
+        t_15m = float(trend_scores.get('trend_15m_score', 0) or 0)
+        t_5m = float(trend_scores.get('trend_5m_score', 0) or 0)
+        strong_trend_alignment = (
+            (trend_1h == 'long' and t_1h >= 40 and t_15m >= 20 and t_5m >= 10)
+            or
+            (trend_1h == 'short' and t_1h <= -40 and t_15m <= -20 and t_5m <= -10)
+        )
+        if strong_trend_alignment and adx_value >= 28:
+            oi_divergence_warn = 25.0
+            oi_divergence_block = 100.0
+            four_layer_result['trend_continuation_mode'] = True
 
         if trend_1h == 'neutral':
             four_layer_result['blocking_reason'] = 'No clear 1h trend (EMA 20/60)'
@@ -2626,9 +2955,17 @@ class MultiAgentTradingBot:
 
                     if trend_1h == 'long':
                         if close_15m > bb_upper or kdj_j > 80:
-                            setup_ready = False
-                            four_layer_result['blocking_reason'] = f"15m overbought (J={kdj_j:.0f}) - wait for pullback"
-                            log.info("⏳ Layer 3 WAIT: Overbought - waiting for pullback")
+                            if strong_trend_alignment and adx_value >= 30 and kdj_j <= 88 and abs(oi_change) >= 2:
+                                setup_ready = True
+                                four_layer_result['setup_quality'] = 'MOMENTUM_CONTINUATION'
+                                four_layer_result['setup_override'] = 'overbought_but_strong_trend'
+                                log.info(
+                                    f"⚡ Layer 3 OVERRIDE: Overbought but strong trend continuation (ADX={adx_value:.0f}, J={kdj_j:.0f})"
+                                )
+                            else:
+                                setup_ready = False
+                                four_layer_result['blocking_reason'] = f"15m overbought (J={kdj_j:.0f}) - wait for pullback"
+                                log.info("⏳ Layer 3 WAIT: Overbought - waiting for pullback")
                         elif close_15m < bb_middle or kdj_j < 50:
                             setup_ready = True
                             four_layer_result['setup_quality'] = 'IDEAL'
@@ -2639,9 +2976,17 @@ class MultiAgentTradingBot:
                             log.info(f"✅ Layer 3 READY: Acceptable mid-range entry (J={kdj_j:.0f})")
                     elif trend_1h == 'short':
                         if close_15m < bb_lower or kdj_j < 20:
-                            setup_ready = False
-                            four_layer_result['blocking_reason'] = f"15m oversold (J={kdj_j:.0f}) - wait for rally"
-                            log.info("⏳ Layer 3 WAIT: Oversold - waiting for rally")
+                            if strong_trend_alignment and adx_value >= 30 and kdj_j >= 12 and abs(oi_change) >= 2:
+                                setup_ready = True
+                                four_layer_result['setup_quality'] = 'MOMENTUM_CONTINUATION'
+                                four_layer_result['setup_override'] = 'oversold_but_strong_trend'
+                                log.info(
+                                    f"⚡ Layer 3 OVERRIDE: Oversold but strong trend continuation (ADX={adx_value:.0f}, J={kdj_j:.0f})"
+                                )
+                            else:
+                                setup_ready = False
+                                four_layer_result['blocking_reason'] = f"15m oversold (J={kdj_j:.0f}) - wait for rally"
+                                log.info("⏳ Layer 3 WAIT: Oversold - waiting for rally")
                         elif close_15m > bb_middle or kdj_j > 50:
                             setup_ready = True
                             four_layer_result['setup_quality'] = 'IDEAL'
@@ -2654,7 +2999,8 @@ class MultiAgentTradingBot:
                         setup_ready = False
 
                 if not setup_ready:
-                    four_layer_result['blocking_reason'] = "15m setup not ready"
+                    if not four_layer_result.get('blocking_reason'):
+                        four_layer_result['blocking_reason'] = "15m setup not ready"
                     log.info("⏳ Layer 3 WAIT: 15m setup not ready")
                 else:
                     four_layer_result['layer3_pass'] = True
@@ -2665,10 +3011,21 @@ class MultiAgentTradingBot:
                         trigger_detector = TriggerDetector()
 
                         df_5m = processed_dfs['5m']
-                        trigger_result = trigger_detector.detect_trigger(df_5m, direction=trend_1h)
+                        trigger_sensitivity = self._get_trigger_sensitivity(
+                            symbol=self.current_symbol,
+                            trend_1h=trend_1h,
+                            adx=float(adx_value or 0),
+                            strong_trend_alignment=strong_trend_alignment
+                        )
+                        trigger_result = trigger_detector.detect_trigger(
+                            df_5m,
+                            direction=trend_1h,
+                            sensitivity=trigger_sensitivity
+                        )
                         four_layer_result['trigger_pattern'] = trigger_result.get('pattern_type') or 'None'
                         rvol = trigger_result.get('rvol', 1.0)
                         four_layer_result['trigger_rvol'] = rvol
+                        four_layer_result['trigger_sensitivity'] = trigger_sensitivity
 
                         if rvol < 0.5:
                             log.warning(f"⚠️ Low Volume Warning (RVOL {rvol:.1f}x < 0.5) - Trend validation may be unreliable")
@@ -2677,8 +3034,36 @@ class MultiAgentTradingBot:
                             four_layer_result['data_anomalies'].append(f"Low Volume (RVOL {rvol:.1f}x)")
 
                         if not trigger_result['triggered']:
-                            four_layer_result['blocking_reason'] = f"5min trigger not confirmed (RVOL={trigger_result.get('rvol', 1.0):.1f}x)"
-                            log.info(f"⏳ Layer 4 WAIT: No engulfing or breakout pattern (RVOL={trigger_result.get('rvol', 1.0):.1f}x)")
+                            soft_trigger = False
+                            try:
+                                curr5 = df_5m.iloc[-1]
+                                momentum_bar_ok = (
+                                    (trend_1h == 'long' and curr5['close'] > curr5['open'])
+                                    or (trend_1h == 'short' and curr5['close'] < curr5['open'])
+                                )
+                                soft_trigger = bool(
+                                    strong_trend_alignment
+                                    and adx_value >= 26
+                                    and trigger_result.get('rvol', 1.0) >= 0.6
+                                    and momentum_bar_ok
+                                )
+                            except Exception:
+                                soft_trigger = False
+
+                            if soft_trigger:
+                                four_layer_result['layer4_pass'] = True
+                                four_layer_result['final_action'] = trend_1h
+                                four_layer_result['trigger_pattern'] = 'soft_momentum'
+                                four_layer_result['confidence_boost'] = max(
+                                    four_layer_result.get('confidence_boost', 0) - 5,
+                                    -10
+                                )
+                                log.info(
+                                    f"⚡ Layer 4 SOFT PASS: strong trend continuation (RVOL={trigger_result.get('rvol', 1.0):.1f}x)"
+                                )
+                            else:
+                                four_layer_result['blocking_reason'] = f"5min trigger not confirmed (RVOL={trigger_result.get('rvol', 1.0):.1f}x)"
+                                log.info(f"⏳ Layer 4 WAIT: No engulfing or breakout pattern (RVOL={trigger_result.get('rvol', 1.0):.1f}x)")
                         else:
                             log.info(f"🎯 Layer 4 TRIGGER: {trigger_result['pattern_type']} detected")
                             sentiment_score = sentiment.get('total_sentiment_score', 0)
@@ -2707,11 +3092,28 @@ class MultiAgentTradingBot:
                             four_layer_result['trigger_pattern'] = trigger_result['pattern_type']
                             log.info(f"✅ Layer 4 PASS: Sentiment {sentiment_score:.0f}, Trigger={trigger_result['pattern_type']}")
                             log.info(f"🎯 ALL LAYERS PASSED: {trend_1h.upper()} with {70 + four_layer_result['confidence_boost']}% confidence")
+
+                        adaptive_state = self._update_trigger_adaptive_state(
+                            symbol=self.current_symbol,
+                            trend_1h=trend_1h,
+                            layer4_pass=bool(four_layer_result.get('layer4_pass'))
+                        )
+                        four_layer_result['layer4_wait_streak'] = adaptive_state.get('wait_streak', 0)
+                        four_layer_result['layer4_trigger_streak'] = adaptive_state.get('trigger_streak', 0)
+                        four_layer_result['layer4_state_key'] = self._get_trigger_state_key(self.current_symbol, trend_1h)
                     else:
                         four_layer_result['trigger_pattern'] = 'disabled'
                         four_layer_result['trigger_rvol'] = None
                         four_layer_result['layer4_pass'] = True
                         four_layer_result['final_action'] = trend_1h
+                        adaptive_state = self._update_trigger_adaptive_state(
+                            symbol=self.current_symbol,
+                            trend_1h=trend_1h,
+                            layer4_pass=True
+                        )
+                        four_layer_result['layer4_wait_streak'] = adaptive_state.get('wait_streak', 0)
+                        four_layer_result['layer4_trigger_streak'] = adaptive_state.get('trigger_streak', 0)
+                        four_layer_result['layer4_state_key'] = self._get_trigger_state_key(self.current_symbol, trend_1h)
                         log.info("⏭️ Layer 4 SKIP: TriggerDetectorAgent disabled")
 
         global_state.four_layer_result = four_layer_result
@@ -3114,6 +3516,16 @@ class MultiAgentTradingBot:
         market_snapshot: Any
     ) -> Dict[str, Any]:
         """Run order execution stage (test/live) with unified lifecycle events."""
+        veto_reason = self._get_position_1h_veto_reason(order_params)
+        if veto_reason:
+            global_state.add_log(f"[🛡️ EXECUTION_VETO] {veto_reason}")
+            return {
+                'status': 'blocked',
+                'action': order_params.get('action', vote_result.action),
+                'details': {'reason': veto_reason, 'stage': 'execution_gate'},
+                'current_price': current_price
+            }
+
         self._emit_runtime_event(
             run_id=run_id,
             stream="lifecycle",
@@ -3143,6 +3555,79 @@ class MultiAgentTradingBot:
             account_balance=account_balance,
             market_snapshot=market_snapshot
         )
+
+    def _get_position_1h_veto_reason(self, order_params: Dict[str, Any]) -> Optional[str]:
+        """Final safety gate for opening actions based on 1h position permission."""
+        action = normalize_action(order_params.get('action'))
+        if not is_open_action(action):
+            return None
+
+        pos_1h = order_params.get('position_1h')
+        if not isinstance(pos_1h, dict):
+            return None
+
+        allow_long = pos_1h.get('allow_long')
+        allow_short = pos_1h.get('allow_short')
+        location = pos_1h.get('location', 'unknown')
+        position_pct = pos_1h.get('position_pct')
+        location_txt = f"1h位置={location}"
+        if isinstance(position_pct, (int, float)):
+            location_txt = f"{location_txt}({position_pct:.1f}%)"
+
+        if action == 'open_long' and allow_long is False:
+            if not self._allow_position_1h_override(order_params, action):
+                return f"{location_txt} 禁止做多(allow_long=False)"
+        if action == 'open_short' and allow_short is False:
+            if not self._allow_position_1h_override(order_params, action):
+                return f"{location_txt} 禁止做空(allow_short=False)"
+        return None
+
+    def _allow_position_1h_override(self, order_params: Dict[str, Any], action: str) -> bool:
+        """Rare breakout override for execution gate, aligned with RiskAuditAgent."""
+        regime_name = str((order_params.get('regime') or {}).get('regime', '')).lower()
+        if any(k in regime_name for k in ('sideways', 'consolidation', 'choppy', 'range', 'directionless')):
+            return False
+
+        confidence = order_params.get('confidence', 0)
+        try:
+            confidence = float(confidence)
+        except Exception:
+            confidence = 0.0
+        if confidence < 92:
+            return False
+
+        pos_1h = order_params.get('position_1h')
+        if not isinstance(pos_1h, dict):
+            return False
+        location = str(pos_1h.get('location', '')).lower()
+        pos_pct = pos_1h.get('position_pct')
+        if not isinstance(pos_pct, (int, float)):
+            return False
+
+        trend_scores = order_params.get('trend_scores') if isinstance(order_params.get('trend_scores'), dict) else {}
+        t_1h = trend_scores.get('trend_1h_score')
+        t_15m = trend_scores.get('trend_15m_score')
+        t_5m = trend_scores.get('trend_5m_score')
+        if not all(isinstance(v, (int, float)) for v in (t_1h, t_15m, t_5m)):
+            return False
+
+        if action == 'open_long':
+            return (
+                location in {'upper', 'resistance'}
+                and pos_pct >= 70
+                and t_1h >= 55
+                and t_15m >= 25
+                and t_5m >= 10
+            )
+        if action == 'open_short':
+            return (
+                location in {'support', 'lower'}
+                and pos_pct <= 30
+                and t_1h <= -55
+                and t_15m <= -25
+                and t_5m <= -10
+            )
+        return False
 
     def _execute_test_mode_order(
         self,
@@ -3934,11 +4419,9 @@ class MultiAgentTradingBot:
     def _get_symbol_trade_stats(self, symbol: str, max_trades: int = 5) -> Dict:
         """Summarize recent closed trades for symbol to support risk filters."""
         history = global_state.trade_history or []
-        loss_streak = 0
-        loss_streak_active = True
-        recent_pnl = 0.0
-        recent_count = 0
-        recent_wins = 0
+        closed_pnls: List[float] = []
+        long_pnls: List[float] = []
+        short_pnls: List[float] = []
 
         for trade in history:
             if trade.get('symbol') != symbol:
@@ -3964,27 +4447,45 @@ class MultiAgentTradingBot:
             except Exception:
                 continue
 
-            if loss_streak_active:
-                if pnl_value < 0:
+            closed_pnls.append(pnl_value)
+            normalized_action = normalize_action(str(trade.get('action', '')).lower())
+            if normalized_action == 'open_long':
+                long_pnls.append(pnl_value)
+            elif normalized_action == 'open_short':
+                short_pnls.append(pnl_value)
+
+        def _calc_bucket_stats(pnls: List[float]) -> Tuple[int, float, int, Optional[float]]:
+            loss_streak = 0
+            for value in pnls:
+                if value < 0:
                     loss_streak += 1
                 else:
-                    loss_streak_active = False
+                    break
 
-            if recent_count < max_trades:
-                recent_pnl += pnl_value
-                recent_count += 1
-                if pnl_value > 0:
-                    recent_wins += 1
+            recent = pnls[:max_trades]
+            recent_count = len(recent)
+            recent_pnl = float(sum(recent)) if recent else 0.0
+            wins = sum(1 for value in recent if value > 0)
+            win_rate = (wins / recent_count) if recent_count > 0 else None
+            return loss_streak, recent_pnl, recent_count, win_rate
 
-            if not loss_streak_active and recent_count >= max_trades:
-                break
+        loss_streak, recent_pnl, recent_count, win_rate = _calc_bucket_stats(closed_pnls)
+        long_loss_streak, long_recent_pnl, long_recent_count, long_win_rate = _calc_bucket_stats(long_pnls)
+        short_loss_streak, short_recent_pnl, short_recent_count, short_win_rate = _calc_bucket_stats(short_pnls)
 
-        win_rate = (recent_wins / recent_count) if recent_count > 0 else None
         return {
             'symbol_loss_streak': loss_streak,
             'symbol_recent_pnl': recent_pnl,
             'symbol_recent_trades': recent_count,
-            'symbol_win_rate': win_rate
+            'symbol_win_rate': win_rate,
+            'symbol_long_loss_streak': long_loss_streak,
+            'symbol_long_recent_pnl': long_recent_pnl,
+            'symbol_long_recent_trades': long_recent_count,
+            'symbol_long_win_rate': long_win_rate,
+            'symbol_short_loss_streak': short_loss_streak,
+            'symbol_short_recent_pnl': short_recent_pnl,
+            'symbol_short_recent_trades': short_recent_count,
+            'symbol_short_win_rate': short_win_rate,
         }
 
     def _get_open_trade_meta(self, symbol: str) -> Optional[Dict]:
@@ -4261,6 +4762,11 @@ class MultiAgentTradingBot:
             current_price = 0.0
         if current_price <= 0:
             return {'status': 'failed', 'action': action, 'details': {'error': 'invalid_price'}}
+
+        veto_reason = self._get_position_1h_veto_reason(order_params)
+        if veto_reason:
+            global_state.add_log(f"[🛡️ EXECUTION_VETO] {suggestion_symbol} {action}: {veto_reason}")
+            return {'status': 'blocked', 'action': action, 'details': {'reason': veto_reason, 'stage': 'suggested_execution_gate'}}
 
         if self.test_mode:
             side = 'LONG' if action == 'open_long' else 'SHORT'
@@ -4748,17 +5254,17 @@ class MultiAgentTradingBot:
             }
         return stats
 
-    def switch_runtime_mode(self, target_mode: str) -> Dict[str, Any]:
-        """Switch test/live mode at runtime. Safe path: switch while not Running."""
+    def switch_runtime_mode(self, target_mode: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """Switch test/live mode at runtime, or force refresh current mode account state."""
         mode = (target_mode or "").strip().lower()
         if mode not in {"test", "live"}:
             raise ValueError("Invalid mode. Must be 'test' or 'live'.")
 
         current_mode = "test" if self.test_mode else "live"
-        if mode == current_mode:
+        if mode == current_mode and not force_refresh:
             return {"trading_mode": current_mode, "is_test_mode": self.test_mode}
 
-        if global_state.execution_mode == "Running":
+        if global_state.execution_mode == "Running" and not force_refresh:
             raise RuntimeError("Please stop or pause the bot before switching mode.")
 
         if mode == "test":
@@ -4782,7 +5288,10 @@ class MultiAgentTradingBot:
                 wallet=global_state.virtual_balance,
                 pnl=0.0
             )
-            global_state.add_log("🧪 Switched to TEST mode (paper account reset to $1000.00).")
+            if force_refresh and current_mode == "test":
+                global_state.add_log("🧪 TEST mode restarted (paper account reset to $1000.00).")
+            else:
+                global_state.add_log("🧪 Switched to TEST mode (paper account reset to $1000.00).")
             return {"trading_mode": "test", "is_test_mode": True}
 
         # mode == "live"
@@ -4834,7 +5343,10 @@ class MultiAgentTradingBot:
         global_state.update_account(equity=equity, available=avail, wallet=wallet, pnl=unrealized)
         global_state.init_balance(equity, initial_balance=equity)
         self._sync_open_positions_to_trade_history()
-        global_state.add_log("💰 Switched to LIVE mode.")
+        if force_refresh and current_mode == "live":
+            global_state.add_log("💰 LIVE mode restarted (account balance reloaded).")
+        else:
+            global_state.add_log("💰 Switched to LIVE mode.")
         return {
             "trading_mode": "live",
             "is_test_mode": False,
@@ -5137,12 +5649,23 @@ class MultiAgentTradingBot:
                 
                 # Step 2: 从所有开仓决策中选择信心度最高的一个
                 if all_decisions:
-                    # 按信心度排序
-                    all_decisions.sort(key=lambda x: x.confidence, reverse=True)
+                    # 按置信度 + AUTO1 趋势质量加分排序（加分仅用于优先级微调）
+                    all_decisions.sort(
+                        key=lambda x: x.confidence + self._get_auto1_execution_bonus(x.symbol),
+                        reverse=True
+                    )
                     best_decision = all_decisions[0]
+                    best_bonus = self._get_auto1_execution_bonus(best_decision.symbol)
+                    best_adjusted = best_decision.confidence + best_bonus
                     
-                    print(f"\n🎯 本周期最优开仓机会: {best_decision.symbol} (信心度: {best_decision.confidence:.1f}%)")
-                    global_state.add_log(f"[🎯 SYSTEM] Best: {best_decision.symbol} (Conf: {best_decision.confidence:.1f}%)")
+                    print(
+                        f"\n🎯 本周期最优开仓机会: {best_decision.symbol} "
+                        f"(信心度: {best_decision.confidence:.1f}% | AUTO1加分: +{best_bonus:.1f} | 调整后: {best_adjusted:.1f}%)"
+                    )
+                    global_state.add_log(
+                        f"[🎯 SYSTEM] Best: {best_decision.symbol} "
+                        f"(Conf: {best_decision.confidence:.1f}% + Bonus {best_bonus:.1f} = {best_adjusted:.1f}%)"
+                    )
                     
                     # 只执行最优的一个（直接执行已审计建议，避免重复跑完整流程）
                     try:
@@ -5169,10 +5692,11 @@ class MultiAgentTradingBot:
                     
                     # 如果有其他开仓机会被跳过，记录下来
                     if len(all_decisions) > 1:
-                        skipped = [f"{d.symbol}({d.confidence:.1f}%)" for d in all_decisions[1:]]
+                        skipped = [
+                            f"{d.symbol}({d.confidence:.1f}%+{self._get_auto1_execution_bonus(d.symbol):.1f})"
+                            for d in all_decisions[1:]
+                        ]
                         print(f"  ⏭️  跳过其他机会: {', '.join(skipped)}")
-                        global_state.add_log(f"⏭️  Skipped opportunities: {', '.join(skipped)} (1 position per cycle limit)")
-                
                         global_state.add_log(f"⏭️  Skipped opportunities: {', '.join(skipped)} (1 position per cycle limit)")
                 
                 # 💰 Update Virtual Account PnL (Mark-to-Market)
